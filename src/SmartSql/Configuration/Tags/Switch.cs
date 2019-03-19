@@ -1,13 +1,10 @@
 ﻿using System;
 using System.Linq;
-using SmartSql.Abstractions;
 
 namespace SmartSql.Configuration.Tags
 {
     public class Switch : Tag
     {
-        public override TagType Type => TagType.Switch;
-
         public override bool IsCondition(RequestContext context)
         {
             return true;
@@ -16,7 +13,7 @@ namespace SmartSql.Configuration.Tags
         {
             var matchedTag = ChildTags.FirstOrDefault(tag =>
             {
-                if (tag.Type == TagType.SwitchCase)
+                if (tag is Case)
                 {
                     var caseTag = tag as Case;
                     return caseTag.IsCondition(context);
@@ -25,7 +22,7 @@ namespace SmartSql.Configuration.Tags
             });
             if (matchedTag == null)
             {
-                matchedTag = ChildTags.FirstOrDefault(tag => tag.Type == TagType.SwitchDefault);
+                matchedTag = ChildTags.FirstOrDefault(tag => tag is Default);
             }
             if (matchedTag != null)
             {
@@ -34,9 +31,8 @@ namespace SmartSql.Configuration.Tags
 
         }
 
-        public class Case : CompareTag
+        public class Case : StringCompareTag
         {
-            public override TagType Type => TagType.SwitchCase;
             public override bool IsCondition(RequestContext context)
             {
                 var reqVal = GetPropertyValue(context);
@@ -44,7 +40,7 @@ namespace SmartSql.Configuration.Tags
                 string reqValStr = string.Empty;
                 if (reqVal is Enum)
                 {
-                    reqValStr = reqVal.GetHashCode().ToString();
+                    reqValStr = Convert.ToInt64(reqVal).ToString();
                 }
                 else
                 {
@@ -54,10 +50,8 @@ namespace SmartSql.Configuration.Tags
             }
         }
 
-        public class Defalut : Tag
+        public class Default : Tag
         {
-            public override TagType Type => TagType.SwitchDefault;
-
             public override bool IsCondition(RequestContext context)
             {
                 return true;

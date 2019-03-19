@@ -1,14 +1,12 @@
-﻿using SmartSql.Abstractions;
+﻿using SmartSql.Utils;
 using System;
 using System.Collections.Generic;
 using System.Text;
 
 namespace SmartSql.Configuration.Tags
 {
-    public class IsEqual : CompareTag
+    public class IsEqual : StringCompareTag
     {
-        public override TagType Type => TagType.IsEqual;
-
         public override bool IsCondition(RequestContext context)
         {
             var reqVal = GetPropertyValue(context);
@@ -16,7 +14,7 @@ namespace SmartSql.Configuration.Tags
             string reqValStr = string.Empty;
             if (reqVal is Enum)
             {
-                reqValStr = reqVal.GetHashCode().ToString();
+                reqValStr = Convert.ToInt64(reqVal).ToString();
             }
             else
             {

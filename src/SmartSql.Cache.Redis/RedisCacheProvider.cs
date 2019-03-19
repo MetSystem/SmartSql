@@ -1,85 +1,65 @@
-﻿using SmartSql.Abstractions.Cache;
-using System;
+﻿using System;
 using System.Collections.Generic;
-using System.Text;
-using System.Collections;
-using StackExchange.Redis;
+using System.Linq;
 using Newtonsoft.Json;
-using SmartSql.Exceptions;
+using SmartSql.Configuration;
+using StackExchange.Redis;
 
 namespace SmartSql.Cache.Redis
 {
     public class RedisCacheProvider : ICacheProvider
     {
-        private String _connStr;
-        private ConnectionMultiplexer _redis;
         private int _databaseId = 0;
-        private IDatabase CacheDB { get { return _redis.GetDatabase(_databaseId); } }
-        private String _prefix;
-
-        public void Initialize(IDictionary properties)
+        private string _prefix;
+        private TimeSpan? _expiryInterval;
+        private ConnectionMultiplexer _redis;
+        private IDatabase _database;
+        public void Initialize(IDictionary<string, object> properties)
         {
-            _connStr = properties["ConnectionString"]?.ToString();
-            if (String.IsNullOrEmpty(_connStr))
-            {
-                throw new SmartSqlException("SmartSql.Cache.Redis.ConnectionString string can't empty.");
-            }
+            properties.EnsureValue("ConnectionString", out string connStr);
 
-            String databaseIdStr = properties["DatabaseId"]?.ToString();
-            if (String.IsNullOrEmpty(databaseIdStr))
+            if (!properties.Value("Prefix", out _prefix))
             {
-                throw new SmartSqlException("SmartSql.Cache.Redis.DatabaseId string can't empty.");
+                properties.Value("Cache.Id", out _prefix);
             }
-            else
+            properties.Value("DatabaseId", out _databaseId);
+            if (properties.Value("FlushInterval", out FlushInterval flushInterval))
             {
-                if (!Int32.TryParse(databaseIdStr, out _databaseId))
-                {
-                    throw new SmartSqlException("SmartSql.Cache.Redis.DatabaseId string is not int.");
-                }
+                _expiryInterval = flushInterval.Interval;
             }
-            _prefix = properties["Prefix"]?.ToString();
-            if (String.IsNullOrEmpty(_prefix))
-            {
-                throw new SmartSqlException("SmartSql.Cache.Redis.Prefix string can't empty.");
-            }
-
-            _redis = RedisManager.Instance.GetRedis(_connStr);
+            _redis = ConnectionMultiplexer.Connect(connStr);
+            _database = _redis.GetDatabase(_databaseId);
         }
 
-        public object this[CacheKey key, Type type]
+        public bool TryAdd(CacheKey cacheKey, object cacheItem)
         {
-            get
-            {
-                string cacheStr = CacheDB.StringGet(key.Key);
-                if (String.IsNullOrEmpty(cacheStr)) { return null; }
-                return JsonConvert.DeserializeObject(cacheStr, type);
-            }
-            set
-            {
-                string cacheStr = JsonConvert.SerializeObject(value);
-                CacheDB.StringSet(key.Key, cacheStr);
-            }
+            string cacheStr = JsonConvert.SerializeObject(cacheItem);
+            return _database.StringSet(cacheKey.Key, cacheStr, _expiryInterval);
         }
 
         public void Flush()
         {
             var serverEndPoint = _redis.GetEndPoints()[0];
-            IServer servier = _redis.GetServer(serverEndPoint);
-            var keys = servier.Keys(_databaseId, pattern: $"{_prefix}*");
-            foreach (string key in keys)
+            var servier = _redis.GetServer(serverEndPoint);
+            var keys = servier.Keys(_databaseId, pattern: $"{_prefix}*").ToArray();
+            if (keys.Length > 0)
             {
-                CacheDB.KeyDelete(key);
+                _database.KeyDelete(keys.ToArray());
             }
         }
 
-        public bool Remove(CacheKey key)
+        public bool TryGetValue(CacheKey cacheKey, out object cacheItem)
         {
-            return CacheDB.KeyDelete(key.Key);
+            cacheItem = null;
+            string cacheStr = _database.StringGet(cacheKey.Key);
+            if (String.IsNullOrEmpty(cacheStr)) { return false; }
+            cacheItem = JsonConvert.DeserializeObject(cacheStr, cacheKey.ResultType);
+            return true;
         }
 
-        public bool Contains(CacheKey key)
+        public void Dispose()
         {
-            return CacheDB.KeyExists(key.Key);
+            _redis.Dispose();
         }
     }
 }
