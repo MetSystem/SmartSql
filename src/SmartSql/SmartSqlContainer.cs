@@ -2,7 +2,7 @@
 using SmartSql.Exceptions;
 using System;
 using System.Collections.Generic;
-using System.Collections.Concurrent;
+
 namespace SmartSql
 {
     public class SmartSqlContainer : IDisposable
@@ -12,7 +12,7 @@ namespace SmartSql
         /// <summary>
         /// Mapper容器
         /// </summary>
-        private ConcurrentDictionary<String, SmartSqlBuilder> Container { get; set; } = new ConcurrentDictionary<String, SmartSqlBuilder>();
+        private Dictionary<String, SmartSqlBuilder> Container { get; set; } = new Dictionary<String, SmartSqlBuilder>();
 
         public SmartSqlBuilder GetSmartSql(string alias)
         {
@@ -21,24 +21,25 @@ namespace SmartSql
                 throw new ArgumentNullException(nameof(alias));
             }
 
-            Container.TryGetValue(alias, out var smartSqlConfig);
-            return smartSqlConfig;
+            Container.TryGetValue(alias, out var smartSqlBuilder);
+            return smartSqlBuilder;
         }
-        public bool TryRegister(string alias, SmartSqlBuilder smartSqlBuilder)
+        public void Register(SmartSqlBuilder smartSqlBuilder)
         {
-            if (alias == null)
+            lock (this)
             {
-                throw new ArgumentNullException(nameof(alias));
+                if (Container.ContainsKey(smartSqlBuilder.Alias))
+                {
+                    throw new SmartSqlException($"SmartSql.Alias:[{smartSqlBuilder.Alias}] already exist.");
+                }
+                Container.Add(smartSqlBuilder.Alias, smartSqlBuilder);
             }
-
-            return Container.TryAdd(alias, smartSqlBuilder);
         }
         public void Dispose()
         {
             foreach (var smartSqlBuilder in Container.Values)
             {
-                smartSqlBuilder.SmartSqlConfig.SessionStore.Dispose();
-                smartSqlBuilder.SmartSqlConfig.CacheManager.Dispose();
+                smartSqlBuilder.Dispose();
             }
             Container.Clear();
         }

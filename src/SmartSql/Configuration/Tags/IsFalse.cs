@@ -6,12 +6,12 @@ namespace SmartSql.Configuration.Tags
 {
     public class IsFalse : Tag
     {
-        public override bool IsCondition(RequestContext context)
+        public override bool IsCondition(AbstractRequestContext context)
         {
-            Object reqVal = GetPropertyValue(context);
-            if (reqVal is Boolean)
+            Object reqVal = EnsurePropertyValue(context);
+            if (reqVal is bool val)
             {
-                return (bool)reqVal == false;
+                return val == false;
             }
             return false;
         }

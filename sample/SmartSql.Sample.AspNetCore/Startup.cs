@@ -1,8 +1,14 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿using System;
+using AspectCore.Extensions.DependencyInjection;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using SmartSql.ConfigBuilder;
+using SmartSql.DIExtension;
+using SmartSql.Sample.AspNetCore.Service;
 using Swashbuckle.AspNetCore.Swagger;
 
 namespace SmartSql.Sample.AspNetCore
@@ -17,20 +23,22 @@ namespace SmartSql.Sample.AspNetCore
         public IConfiguration Configuration { get; }
 
         // This method gets called by the runtime. Use this method to add services to the container.
-        public void ConfigureServices(IServiceCollection services)
+        public IServiceProvider ConfigureServices(IServiceCollection services)
         {
             services.AddMvc().SetCompatibilityVersion(CompatibilityVersion.Version_2_2);
             services
-                .AddSmartSql()
+                .AddSmartSql((builder) =>
+                {
+                    builder.UseProperties(Configuration);
+                })
                 .AddRepositoryFromAssembly(o =>
                 {
                     o.AssemblyString = "SmartSql.Sample.AspNetCore";
-                    o.Filter = (type) =>
-                    {
-                        return type.Namespace == "SmartSql.Sample.AspNetCore.DyRepositories";
-                    };
+                    o.Filter = (type) => type.Namespace == "SmartSql.Sample.AspNetCore.DyRepositories";
                 });
+            services.AddSingleton<UserService>();
             RegisterConfigureSwagger(services);
+            return services.BuildAspectInjectorProvider();
         }
         private void RegisterConfigureSwagger(IServiceCollection services)
         {

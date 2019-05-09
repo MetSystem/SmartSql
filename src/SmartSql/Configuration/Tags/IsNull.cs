@@ -6,10 +6,9 @@ namespace SmartSql.Configuration.Tags
 {
     public class IsNull : Tag
     {
-        public override bool IsCondition(RequestContext context)
+        public override bool IsCondition(AbstractRequestContext context)
         {
-            Object reqVal = GetPropertyValue(context);
-            return reqVal == null;
+            return EnsurePropertyValue(context) == null;
         }
     }
 }

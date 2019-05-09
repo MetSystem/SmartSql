@@ -3,6 +3,7 @@ using SmartSql.Configuration;
 using System;
 using System.Data;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace SmartSql.Middlewares
 {
@@ -11,9 +12,9 @@ namespace SmartSql.Middlewares
         public IMiddleware Next { get; set; }
         private readonly ICommandExecuter _commandExecuter;
 
-        public CommandExecuterMiddleware()
+        public CommandExecuterMiddleware(SmartSqlConfig smartSqlConfig)
         {
-            _commandExecuter = new CommandExecuter();
+            _commandExecuter = new CommandExecuter(smartSqlConfig.LoggerFactory.CreateLogger<CommandExecuter>());
         }
 
         public void Invoke<TResult>(ExecutionContext executionContext)
@@ -70,7 +71,7 @@ namespace SmartSql.Middlewares
         {
             var singleResult = executionContext.Result as SingleResultContext<TResult>;
             var dbResult = _commandExecuter.ExecuteScalar(executionContext);
-            if (dbResult == DBNull.Value)
+            if (dbResult == null || dbResult == DBNull.Value)
             {
                 singleResult.SetData(default(TResult));
             }
@@ -78,7 +79,7 @@ namespace SmartSql.Middlewares
             {
                 var convertType = singleResult.ResultType;
                 convertType = Nullable.GetUnderlyingType(convertType) ?? convertType;
-                
+
                 if (convertType.IsEnum)
                 {
                     singleResult.SetData(Enum.ToObject(convertType, dbResult));

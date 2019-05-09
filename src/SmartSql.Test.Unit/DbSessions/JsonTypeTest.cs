@@ -6,8 +6,15 @@ using Xunit;
 
 namespace SmartSql.Test.Unit.DbSessions
 {
-    public class JsonTypeTest : AbstractXmlConfigBuilderTest
+    [Collection("GlobalSmartSql")]
+    public class JsonTypeTest
     {
+        protected ISqlMapper SqlMapper { get; }
+
+        public JsonTypeTest(SmartSqlFixture smartSqlFixture)
+        {
+            SqlMapper = smartSqlFixture.SqlMapper;
+        }
         [Fact]
         public void Insert()
         {
@@ -15,51 +22,50 @@ namespace SmartSql.Test.Unit.DbSessions
             Assert.NotEqual(0, id);
         }
 
-        private long InsertImpl(User user = null)
+        private long InsertImpl(UserExtendedInfo userExtendedInfo = null)
         {
-            if (user == null)
+            if (userExtendedInfo == null)
             {
-                user = new User
-                {
-                    UserName = "SmartSql",
-                    Info = new UserInfo
-                    {
-                        Height = 188,
-                        Weight = 168
-                    }
-                };
+                userExtendedInfo = NewUserExtendedInfo();
             }
-            return DbSession.ExecuteScalar<long>(new RequestContext
+            SqlMapper.Execute(new RequestContext
             {
-                Scope = "User",
+                Scope = nameof(UserExtendedInfo),
                 SqlId = "Insert",
-                Request = user
+                Request = userExtendedInfo
             });
+            return userExtendedInfo.UserId;
         }
 
-        [Fact]
-        public void GetById()
+        private UserExtendedInfo NewUserExtendedInfo()
         {
-            var insertUser = new User
+            SqlMapper.SmartSqlConfig.IdGenerators.TryGetValue("DbSequence", out var idGenerator);
+            var id = idGenerator.NextId();
+            return new UserExtendedInfo
             {
-                UserName = "SmartSql",
-                Info = new UserInfo
+                UserId = id,
+                Data = new UserInfo
                 {
                     Height = 188,
                     Weight = 168
                 }
             };
-            var id = InsertImpl(insertUser);
-            var user = DbSession.QuerySingle<User>(new RequestContext
+        }
+
+        [Fact]
+        public void GetById()
+        {
+            var insertUserExtendedInfo = NewUserExtendedInfo();
+            var userId = InsertImpl(insertUserExtendedInfo);
+            var userExtendedInfo = SqlMapper.QuerySingle<UserExtendedInfo>(new RequestContext
             {
-                Scope = "User",
-                SqlId = "GetById",
-                Request = new { Id = id }
+                Scope = nameof(UserExtendedInfo),
+                SqlId = "GetEntity",
+                Request = new { UserId = userId }
             });
-            Assert.Equal(id, user.Id);
-            Assert.Equal(insertUser.UserName, user.UserName);
-            Assert.Equal(insertUser.Info.Height, user.Info.Height);
-            Assert.Equal(insertUser.Info.Weight, user.Info.Weight);
+            Assert.Equal(userId, insertUserExtendedInfo.UserId);
+            Assert.Equal(userExtendedInfo.Data.Height, userExtendedInfo.Data.Height);
+            Assert.Equal(userExtendedInfo.Data.Weight, userExtendedInfo.Data.Weight);
         }
     }
 }

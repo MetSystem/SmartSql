@@ -13,22 +13,22 @@ namespace SmartSql.Test.Unit
         [Fact]
         public void Build_By_DataSource()
         {
-            var dbSessionFactory = SmartSqlBuilder
-                .AddDataSource(DbProvider.SQLSERVER, ConnectionString)
+            var dbSessionFactory = new SmartSqlBuilder()
+                .UseDataSource(DbProvider.SQLSERVER, ConnectionString)
+                .UseAlias("Build_By_DataSource")
                 .Build().GetDbSessionFactory();
 
             using (var dbSession = dbSessionFactory.Open())
             {
 
             }
-            SmartSqlContainer.Instance.Dispose();
         }
         [Fact]
         public void Build_By_Config()
         {
             DbProviderManager.Instance.TryGet(DbProvider.SQLSERVER, out var dbProvider);
-            var dbSessionFactory = SmartSqlBuilder
-               .AddConfig(new Configuration.SmartSqlConfig
+            var dbSessionFactory = new SmartSqlBuilder()
+               .UseNativeConfig(new Configuration.SmartSqlConfig
                {
                    Database = new Database
                    {
@@ -42,25 +42,25 @@ namespace SmartSql.Test.Unit
                        Reads = new Dictionary<String, ReadDataSource>()
                    }
                })
+               .UseAlias("Build_By_Config")
                .Build();
-            SmartSqlContainer.Instance.Dispose();
         }
         [Fact]
         public void Build_By_Xml()
         {
-            var dbSessionFactory = SmartSqlBuilder
-               .AddXmlConfig()
+            var dbSessionFactory = new SmartSqlBuilder()
+               .UseXmlConfig()
+               .UseAlias("Build_By_Xml")
                .Build();
-            SmartSqlContainer.Instance.Dispose();
         }
         [Fact]
         public void Build_As_Mapper()
         {
-            var sqlMapper = SmartSqlBuilder
-               .AddXmlConfig()
+            var sqlMapper = new SmartSqlBuilder()
+               .UseXmlConfig()
+               .UseAlias("Build_As_Mapper")
                .Build()
                .GetSqlMapper();
-            SmartSqlContainer.Instance.Dispose();
         }
 
     }

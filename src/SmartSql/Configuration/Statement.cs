@@ -13,16 +13,16 @@ namespace SmartSql.Configuration
         public StatementType StatementType { get; set; } = StatementType.Unknown;
         public CommandType? CommandType { get; set; }
         public DataSourceChoice? SourceChoice { get; set; }
-        [Obsolete("弃用")]
         public IsolationLevel? Transaction { get; set; }
         public String ReadDb { get; set; }
+        public int? CommandTimeout { get; set; }
         public String FullSqlId => $"{SqlMap.Scope}.{Id}";
         public IList<ITag> SqlTags { get; set; }
         #region Map
         public String CacheId { get; set; }
         public Cache Cache { get; set; }
-        //public String ParameterMapId { get; set; }
-        //public ParameterMap ParameterMap { get; set; }
+        public String ParameterMapId { get; set; }
+        public ParameterMap ParameterMap { get; set; }
         public String ResultMapId { get; set; }
         public ResultMap ResultMap { get; set; }
         public String MultipleResultMapId { get; set; }
@@ -30,7 +30,7 @@ namespace SmartSql.Configuration
         #endregion
         internal IList<Include> IncludeDependencies { get; set; }
 
-        public void BuildSql(RequestContext context)
+        public void BuildSql(AbstractRequestContext context)
         {
             foreach (ITag tag in SqlTags)
             {

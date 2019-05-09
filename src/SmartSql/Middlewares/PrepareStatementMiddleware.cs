@@ -8,6 +8,7 @@ using System.Data.Common;
 using SmartSql.TypeHandlers;
 using Microsoft.Extensions.Logging;
 using System.Data;
+using SmartSql.Data;
 
 namespace SmartSql.Middlewares
 {
@@ -16,7 +17,7 @@ namespace SmartSql.Middlewares
         private readonly ILogger _logger;
         private readonly SqlParamAnalyzer _sqlParamAnalyzer;
         private readonly DbProviderFactory _dbProviderFactory;
-        private readonly ITypeHandlerFactory _typeHandlerFactory;
+        private readonly TypeHandlerFactory _typeHandlerFactory;
         public IMiddleware Next { get; set; }
         public PrepareStatementMiddleware(SmartSqlConfig smartSqlConfig)
         {
@@ -70,48 +71,76 @@ namespace SmartSql.Middlewares
             }
         }
 
-        private void BuildDbParameters(RequestContext reqConetxt)
+        private void BuildDbParameters(AbstractRequestContext reqConetxt)
         {
             var dbParameterNames = _sqlParamAnalyzer.Analyse(reqConetxt.RealSql);
-            foreach (var paramName in dbParameterNames)
+            if (reqConetxt.CommandType == CommandType.StoredProcedure)
             {
-                if (!reqConetxt.Parameters.TryGetValue(paramName, out var sqlParameter))
+                foreach (var sqlParameter in reqConetxt.Parameters.Values)
                 {
-                    continue;
+                    var sourceParam = _dbProviderFactory.CreateParameter();
+                    sourceParam.ParameterName = sqlParameter.Name;
+                    sourceParam.Value = sqlParameter.Value;
+                    sqlParameter.SourceParameter = sourceParam;
+                    InitSourceDbParameter(sourceParam, sqlParameter);
                 }
-                var sourceParam = _dbProviderFactory.CreateParameter();
-                sourceParam.ParameterName = paramName;
-                if (sqlParameter.TypeHandler == null)
+            }
+            else
+            {
+                foreach (var paramName in dbParameterNames)
                 {
-                    sqlParameter.TypeHandler = _typeHandlerFactory.Get(sqlParameter.ParameterType);
-                }
-                var typeHandler = sqlParameter.TypeHandler;
-                typeHandler.SetParameter(sourceParam, sqlParameter.Value);
-                sqlParameter.SourceParameter = sourceParam;
-                if (sqlParameter.DbType.HasValue)
-                {
-                    sourceParam.DbType = sqlParameter.DbType.Value;
-                }
-                if (sqlParameter.Direction.HasValue)
-                {
-                    sourceParam.Direction = sqlParameter.Direction.Value;
-                }
-                if (sqlParameter.Precision.HasValue)
-                {
-                    sourceParam.Precision = sqlParameter.Precision.Value;
-                }
-                if (sqlParameter.Scale.HasValue)
-                {
-                    sourceParam.Scale = sqlParameter.Scale.Value;
-                }
-                if (sqlParameter.Size.HasValue)
-                {
-                    sourceParam.Size = sqlParameter.Size.Value;
+                    var parameter = reqConetxt.ParameterMap?.GetParameter(paramName);
+                    var propertyName = paramName;
+                    ITypeHandler typeHandler = null;
+                    if (parameter != null)
+                    {
+                        propertyName = parameter.Property;
+                        typeHandler = parameter.Handler;
+                    }
+                    if (!reqConetxt.Parameters.TryGetValue(propertyName, out var sqlParameter))
+                    {
+                        continue;
+                    }
+                    var sourceParam = _dbProviderFactory.CreateParameter();
+                    sourceParam.ParameterName = paramName;
+
+                    if (typeHandler == null)
+                    {
+                        typeHandler = sqlParameter.TypeHandler ?? _typeHandlerFactory.GetTypeHandler(sqlParameter.ParameterType);
+                    }
+
+                    typeHandler.SetParameter(sourceParam, sqlParameter.Value);
+                    sqlParameter.SourceParameter = sourceParam;
+                    InitSourceDbParameter(sourceParam, sqlParameter);
                 }
             }
         }
 
-        private void BuildSql(RequestContext requestContext)
+        private void InitSourceDbParameter(DbParameter sourceParam, SqlParameter sqlParameter)
+        {
+            if (sqlParameter.DbType.HasValue)
+            {
+                sourceParam.DbType = sqlParameter.DbType.Value;
+            }
+            if (sqlParameter.Direction.HasValue)
+            {
+                sourceParam.Direction = sqlParameter.Direction.Value;
+            }
+            if (sqlParameter.Precision.HasValue)
+            {
+                sourceParam.Precision = sqlParameter.Precision.Value;
+            }
+            if (sqlParameter.Scale.HasValue)
+            {
+                sourceParam.Scale = sqlParameter.Scale.Value;
+            }
+            if (sqlParameter.Size.HasValue)
+            {
+                sourceParam.Size = sqlParameter.Size.Value;
+            }
+        }
+
+        private void BuildSql(AbstractRequestContext requestContext)
         {
             if (!requestContext.IsStatementSql)
             {

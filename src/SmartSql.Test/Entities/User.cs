@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using SmartSql.Annotations;
 
 
 namespace SmartSql.Test.Entities
@@ -25,10 +26,9 @@ namespace SmartSql.Test.Entities
         }
         public long Id { get; set; }
         public String UserName { get; set; }
-        public UserInfo Info { get; set; }
         public UserStatus Status { get; set; }
     }
-    public enum UserStatus
+    public enum UserStatus : Int16
     {
         Ok = 1
     }

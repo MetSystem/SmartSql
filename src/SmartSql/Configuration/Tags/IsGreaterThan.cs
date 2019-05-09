@@ -7,9 +7,9 @@ namespace SmartSql.Configuration.Tags
 {
     public class IsGreaterThan : NumericalCompareTag
     {
-        public override bool IsCondition(RequestContext context)
+        public override bool IsCondition(AbstractRequestContext context)
         {
-            Object reqVal = GetPropertyValue(context);
+            Object reqVal = EnsurePropertyValue(context);
             if (reqVal == null) { return false; }
 
             Decimal reqValNum = 0M;

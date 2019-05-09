@@ -6,11 +6,11 @@ using System.Text;
 
 namespace SmartSql.TypeHandlers
 {
-    public class NullableSByteTypeHandler : AbstractNullableTypeHandler<SByte?>
+    public class NullableSByteTypeHandler : AbstractNullableTypeHandler<SByte?, AnyFieldType>
     {
         protected override SByte? GetValueWhenNotNull(DataReaderWrapper dataReader, int columnIndex)
         {
-            return dataReader.GetFieldValue<SByte>(columnIndex);
+            return Convert.ToSByte(dataReader.GetValue(columnIndex));
         }
     }
 }

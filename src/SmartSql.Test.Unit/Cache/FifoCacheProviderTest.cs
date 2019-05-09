@@ -6,22 +6,30 @@ using Xunit;
 
 namespace SmartSql.Test.Unit.Cache
 {
-    public class FifoCacheProviderTest : AbstractXmlConfigBuilderTest
+    [Collection("GlobalSmartSql")]
+    public class FifoCacheProviderTest
     {
+        protected ISqlMapper SqlMapper { get; }
+
+        public FifoCacheProviderTest(SmartSqlFixture smartSqlFixture)
+        {
+            SqlMapper = smartSqlFixture.SqlMapper;
+        }
+
         [Fact]
         public void QueryByFifoCache()
         {
-            var list = DbSession.Query<AllPrimitive>(new RequestContext
+            var list = SqlMapper.Query<AllPrimitive>(new RequestContext
             {
                 Scope = nameof(AllPrimitive),
                 SqlId = "QueryByFifoCache"
             });
-            var cachedList = DbSession.Query<AllPrimitive>(new RequestContext
+            var cachedList = SqlMapper.Query<AllPrimitive>(new RequestContext
             {
                 Scope = nameof(AllPrimitive),
                 SqlId = "QueryByFifoCache"
             });
-            Assert.Equal(list, cachedList);
+            Assert.Equal(list.GetHashCode(), cachedList.GetHashCode());
         }
     }
 }

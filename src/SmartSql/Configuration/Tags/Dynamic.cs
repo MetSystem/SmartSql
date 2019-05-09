@@ -1,47 +1,58 @@
-﻿using System;
+﻿using SmartSql.Exceptions;
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 
 namespace SmartSql.Configuration.Tags
 {
     public class Dynamic : Tag
     {
-        public override bool IsCondition(RequestContext context)
+        public int? Min { get; set; }
+        public override bool IsCondition(AbstractRequestContext context)
         {
-            return true;
+            var matched = ChildTags.Sum(childTag => childTag.IsCondition(context) ? 1 : 0);
+            if (Min.HasValue)
+            {
+                if (matched < Min)
+                {
+                    throw new TagMinMatchedFailException(this, matched);
+                }
+            }
+            return matched > 0;
         }
-        public override void BuildSql(RequestContext context)
+        public override void BuildSql(AbstractRequestContext context)
         {
-            BuildChildSql(context);
+            if (IsCondition(context))
+            {
+                BuildChildSql(context);
+            }
         }
 
-        public override void BuildChildSql(RequestContext context)
+        public override void BuildChildSql(AbstractRequestContext context)
         {
-            if (ChildTags != null && ChildTags.Count > 0)
+            bool isFirstChild = true;
+            foreach (var childTag in ChildTags)
             {
-                bool isFirstChild = true;
-                foreach (var childTag in ChildTags)
+                if (!childTag.IsCondition(context))
                 {
-                    if (!childTag.IsCondition(context))
+                    continue;
+                }
+                if (isFirstChild)
+                {
+                    isFirstChild = false;
+                    context.SqlBuilder.Append(" ");
+                    context.SqlBuilder.Append(Prepend);
+                    context.SqlBuilder.Append(" ");
+                    if (!(childTag is SqlText))
                     {
-                        continue;
+                        context.IgnorePrepend = true;
                     }
-                    if (isFirstChild)
-                    {
-                        isFirstChild = false;
-                        context.SqlBuilder.Append(" ");
-                        context.SqlBuilder.Append(Prepend);
-                        context.SqlBuilder.Append(" ");
-                        if (!(childTag is SqlText))
-                        {
-                            context.IgnorePrepend = true;
-                        }
-                        childTag.BuildSql(context);
-                    }
-                    else
-                    {
-                        childTag.BuildSql(context);
-                    }
+                    childTag.BuildSql(context);
+                }
+                else
+                {
+                    childTag.BuildSql(context);
                 }
             }
         }

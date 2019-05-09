@@ -7,13 +7,15 @@
 // Code Generate Github : https://github.com/Ahoo-Wang/SmartCode
 //*******************************-->
 
-<SmartSqlMap Scope="AllPrimitive" xmlns="http://SmartSql.net/schemas/SmartSqlMap-v4.xsd">
+<SmartSqlMap Scope="AllPrimitive" xmlns="http://SmartSql.net/schemas/SmartSqlMap.xsd">
   <Caches>
     <Cache Id="LruCache" Type="Lru">
-      <Property Name="CacheSize" Value="2"/>
+      <Property Name="CacheSize" Value="10"/>
+      <FlushOnExecute Statement="AllPrimitive.Insert"/>
+      <FlushInterval Hours="1" Minutes="0" Seconds="0"/>
     </Cache>
     <Cache Id="FifoCache" Type="Fifo">
-      <Property Name="CacheSize" Value="2"/>
+      <Property Name="CacheSize" Value="10"/>
     </Cache>
     <Cache Id="RedisCache" Type="${RedisCacheProvider}">
       <Property Name="ConnectionString" Value="${Redis}" />
@@ -29,6 +31,7 @@
   <Statements>
     <Statement Id="QueryParams">
       <Where>
+        
         <IsNotEmpty Prepend="And" Property="Id">
           T.Id = @Id
         </IsNotEmpty>
@@ -52,9 +55,6 @@
         </IsNotEmpty>
         <IsNotEmpty Prepend="And" Property="Single">
           T.Single = @Single
-        </IsNotEmpty>
-        <IsNotEmpty Prepend="And" Property="Double">
-          T.Double = @Double
         </IsNotEmpty>
         <IsNotEmpty Prepend="And" Property="Decimal">
           T.Decimal = @Decimal
@@ -119,9 +119,9 @@
 
       </Where>
     </Statement>
-    <Statement Id="QueryByRedisCache"  Cache="RedisCache">
+    <!--<Statement Id="QueryByRedisCache"  Cache="RedisCache">
       SELECT Top 6 T.* From T_AllPrimitive T;
-    </Statement>
+    </Statement>-->
     <Statement Id="QueryByLruCache"  Cache="LruCache">
       SELECT Top 6 T.* From T_AllPrimitive T;
     </Statement>
@@ -148,7 +148,6 @@
       Int32,
       Int64,
       Single,
-      [Double],
       Decimal,
       DateTime,
       String,
@@ -179,7 +178,69 @@
       @Int32,
       @Int64,
       @Single,
-      @Double,
+      @Decimal,
+      @DateTime,
+      @String,
+      @Guid,
+      @TimeSpan,
+      @NumericalEnum,
+      @NullableBoolean,
+      @NullableChar,
+      @NullableByte,
+      @NullableInt16,
+      @NullableInt32,
+      @NullableInt64,
+      @NullableSingle,
+      @NullableDouble,
+      @NullableDecimal,
+      @NullableDateTime,
+      @NullableGuid,
+      @NullableTimeSpan,
+      @NullableNumericalEnum,
+      @NullableString
+      )
+      ;Select Scope_Identity();
+    </Statement>
+    <Statement Id="InsertByStatementTransaction" Transaction="Unspecified">
+      INSERT INTO T_AllPrimitive
+      (
+      Boolean,
+      Char,
+      Byte,
+      Int16,
+      Int32,
+      Int64,
+      Single,
+      Decimal,
+      DateTime,
+      String,
+      Guid,
+      TimeSpan,
+      NumericalEnum,
+      NullableBoolean,
+      NullableChar,
+      NullableByte,
+      NullableInt16,
+      NullableInt32,
+      NullableInt64,
+      NullableSingle,
+      NullableDouble,
+      NullableDecimal,
+      NullableDateTime,
+      NullableGuid,
+      NullableTimeSpan,
+      NullableNumericalEnum,
+      NullableString
+      )
+      VALUES
+      (
+      @Boolean,
+      @Char,
+      @Byte,
+      @Int16,
+      @Int32,
+      @Int64,
+      @Single,
       @Decimal,
       @DateTime,
       @String,
@@ -214,7 +275,6 @@
       Int32,
       Int64,
       Single,
-      [Double],
       Decimal,
       DateTime,
       String,
@@ -245,7 +305,6 @@
       @Int32,
       @Int64,
       @Single,
-      @Double,
       @Decimal,
       @DateTime,
       @String,
@@ -419,7 +478,39 @@
       SELECT Top 6 T.* From T_AllPrimitive T;
       SELECT Top 8 T.* From T_AllPrimitive T;
     </Statement>
+    <Statement Id="DeleteQueryParams">
+      <Where>
+        <IsNotEmpty Prepend="And" Property="Id">
+          Id=@Id
+        </IsNotEmpty>
+        <IsNotEmpty Prepend="And" Property="Name">
+          Name=@Name
+        </IsNotEmpty>
+      </Where>
+    </Statement>
+    <Statement Id="DeleteCheckIncludeRequired">
+      Delete From T_AllPrimitive
+      <Include RefId="DeleteQueryParams" Required="true"/>
+    </Statement>
+    <Statement Id="DeleteCheckIsNotEmptyRequired">
+      Delete From T_AllPrimitive
+      <Where>
+        <IsNotEmpty Prepend="And" Property="Id" Required="true">
+          Id=@Id
+        </IsNotEmpty>
+      </Where>
+    </Statement>
+    <Statement Id="GetGuid">
+      Select NewId();
+    </Statement>
+    <Statement Id="GetByPage_ValueTuple">
+      Select T.* From T_AllPrimitive T With(NoLock)
+      <Include RefId="QueryParams" />
+      Order By T.Id Desc
+      Offset ((@PageIndex-1)*@PageSize) Rows Fetch Next @PageSize Rows Only;
 
-
+      Select Count(1) From T_AllPrimitive T
+      <Include RefId="QueryParams" />;
+    </Statement>
   </Statements>
 </SmartSqlMap>

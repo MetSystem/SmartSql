@@ -15,7 +15,7 @@ namespace SmartSql.DbSession
 {
     public class DefaultDbSession : IDbSession
     {
-        private ILogger<DefaultDbSession> _logger;
+        private readonly ILogger<DefaultDbSession> _logger;
 
         public event DbSessionEventHandler Opened;
         public event DbSessionEventHandler TransactionBegan;
@@ -121,7 +121,6 @@ namespace SmartSql.DbSession
                 {
                     _logger.LogDebug("BeginTransaction.");
                 }
-                EnsureDataSource();
                 Open();
                 Transaction = Connection.BeginTransaction();
                 TransactionBegan?.Invoke(this, DbSessionEventArgs.None);
@@ -131,7 +130,7 @@ namespace SmartSql.DbSession
             catch (Exception ex)
             {
                 _diagnosticListener.WriteDbSessionBeginTransactionError(operationId, this, ex);
-                throw ex;
+                throw;
             }
         }
         public void BeginTransaction(IsolationLevel isolationLevel)
@@ -145,7 +144,6 @@ namespace SmartSql.DbSession
                 {
                     _logger.LogDebug("BeginTransaction.");
                 }
-                EnsureDataSource();
                 Open();
                 Transaction = Connection.BeginTransaction(isolationLevel);
                 TransactionBegan?.Invoke(this, DbSessionEventArgs.None);
@@ -155,7 +153,7 @@ namespace SmartSql.DbSession
             catch (Exception ex)
             {
                 _diagnosticListener.WriteDbSessionBeginTransactionError(operationId, this, ex);
-                throw ex;
+                throw;
             }
         }
 
@@ -179,6 +177,7 @@ namespace SmartSql.DbSession
                     throw new SmartSqlException("Before CommitTransaction,Please BeginTransaction first!");
                 }
                 Transaction.Commit();
+                ReleaseTransaction();
                 Committed?.Invoke(this, DbSessionEventArgs.None);
                 #endregion
                 _diagnosticListener.WriteDbSessionCommitAfter(operationId, this);
@@ -186,7 +185,7 @@ namespace SmartSql.DbSession
             catch (Exception ex)
             {
                 _diagnosticListener.WriteDbSessionCommitError(operationId, this, ex);
-                throw ex;
+                throw;
             }
         }
 
@@ -206,6 +205,7 @@ namespace SmartSql.DbSession
                     throw new SmartSqlException("Before RollbackTransaction,Please BeginTransaction first!");
                 }
                 Transaction.Rollback();
+                ReleaseTransaction();
                 Rollbacked?.Invoke(this, DbSessionEventArgs.None);
                 #endregion
                 _diagnosticListener.WriteDbSessionRollbackAfter(operationId, this);
@@ -213,8 +213,14 @@ namespace SmartSql.DbSession
             catch (Exception ex)
             {
                 _diagnosticListener.WriteDbSessionRollbackError(operationId, this, ex);
-                throw ex;
+                throw;
             }
+        }
+
+        private void ReleaseTransaction()
+        {
+            Transaction.Dispose();
+            Transaction = null;
         }
 
         public void Dispose()
@@ -229,17 +235,16 @@ namespace SmartSql.DbSession
                     _logger.LogDebug($"Dispose. ");
                 }
 
+                if (Transaction != null)
+                {
+                    RollbackTransaction();
+                }
+
                 if (Connection != null)
                 {
                     Connection.Close();
                     Connection.Dispose();
                     Connection = null;
-                }
-
-                if (Transaction != null)
-                {
-                    Transaction.Dispose();
-                    Transaction = null;
                 }
                 Disposed?.Invoke(this, DbSessionEventArgs.None);
                 #endregion
@@ -248,11 +253,12 @@ namespace SmartSql.DbSession
             catch (Exception ex)
             {
                 _diagnosticListener.WriteDbSessionDisposeError(operationId, this, ex);
-                throw ex;
+                throw;
             }
         }
-        public ExecutionContext Invoke<TResult>(RequestContext requestContext)
+        public ExecutionContext Invoke<TResult>(AbstractRequestContext requestContext)
         {
+            Stopwatch stopwatch = null;
             var operationId = Guid.Empty;
             var executionContext = new ExecutionContext
             {
@@ -262,8 +268,14 @@ namespace SmartSql.DbSession
             };
             try
             {
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    stopwatch = Stopwatch.StartNew();
+                }
                 operationId = _diagnosticListener.WriteDbSessionInvokeBefore(executionContext);
+
                 #region Impl
+
                 switch (executionContext.Type)
                 {
                     case ExecutionType.Execute:
@@ -281,20 +293,31 @@ namespace SmartSql.DbSession
                             break;
                         }
                 }
+
                 requestContext.ExecutionContext = executionContext;
                 Pipeline.Invoke<TResult>(executionContext);
                 #endregion
+
                 _diagnosticListener.WriteDbSessionInvokeAfter(operationId, executionContext);
                 return executionContext;
             }
             catch (Exception ex)
             {
                 _diagnosticListener.WriteDbSessionInvokeError(operationId, executionContext, ex);
-                throw ex;
+                throw;
+            }
+            finally
+            {
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug(
+                        $"Statement.Id:{(requestContext.IsStatementSql ? requestContext.FullSqlId : requestContext.RealSql)} Invoke Taken:{stopwatch?.ElapsedMilliseconds}.");
+                }
             }
         }
-        public async Task<ExecutionContext> InvokeAsync<TResult>(RequestContext requestContext)
+        public async Task<ExecutionContext> InvokeAsync<TResult>(AbstractRequestContext requestContext)
         {
+            Stopwatch stopwatch = null;
             Guid operationId = Guid.Empty;
             var executionContext = new ExecutionContext
             {
@@ -304,6 +327,10 @@ namespace SmartSql.DbSession
             };
             try
             {
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    stopwatch = Stopwatch.StartNew();
+                }
                 operationId = _diagnosticListener.WriteDbSessionInvokeBefore(executionContext);
                 #region Impl
                 switch (executionContext.Type)
@@ -332,85 +359,93 @@ namespace SmartSql.DbSession
             catch (Exception ex)
             {
                 _diagnosticListener.WriteDbSessionInvokeError(operationId, executionContext, ex);
-                throw ex;
+                throw;
+            }
+            finally
+            {
+                if (_logger.IsEnabled(LogLevel.Debug))
+                {
+                    _logger.LogDebug(
+                        $"Statement.Id:{(requestContext.IsStatementSql ? requestContext.FullSqlId : requestContext.RealSql)} Invoke Taken:{stopwatch?.ElapsedMilliseconds}.");
+                }
             }
         }
-        public int Execute(RequestContext requestContext)
+        public int Execute(AbstractRequestContext requestContext)
         {
             requestContext.ExecutionType = ExecutionType.Execute;
             var executionContext = Invoke<int>(requestContext);
             return ((SingleResultContext<int>)executionContext.Result).Data;
         }
 
-        public TResult ExecuteScalar<TResult>(RequestContext requestContext)
+        public TResult ExecuteScalar<TResult>(AbstractRequestContext requestContext)
         {
             requestContext.ExecutionType = ExecutionType.ExecuteScalar;
             var executionContext = Invoke<TResult>(requestContext);
             return ((SingleResultContext<TResult>)executionContext.Result).Data;
         }
-        public TResult QuerySingle<TResult>(RequestContext requestContext)
+        public TResult QuerySingle<TResult>(AbstractRequestContext requestContext)
         {
             requestContext.ExecutionType = ExecutionType.QuerySingle;
             var executionContext = Invoke<TResult>(requestContext);
             return ((SingleResultContext<TResult>)executionContext.Result).Data;
         }
 
-        public DataSet GetDataSet(RequestContext requestContext)
+        public DataSet GetDataSet(AbstractRequestContext requestContext)
         {
             requestContext.ExecutionType = ExecutionType.GetDataSet;
             var executionContext = Invoke<DataSet>(requestContext);
             return executionContext.Result.GetData() as DataSet;
         }
 
-        public DataTable GetDataTable(RequestContext requestContext)
+        public DataTable GetDataTable(AbstractRequestContext requestContext)
         {
             requestContext.ExecutionType = ExecutionType.GetDataTable;
             var executionContext = Invoke<DataTable>(requestContext);
             return executionContext.Result.GetData() as DataTable;
         }
-        public IEnumerable<TResult> Query<TResult>(RequestContext requestContext)
+        public IList<TResult> Query<TResult>(AbstractRequestContext requestContext)
         {
             requestContext.ExecutionType = ExecutionType.Query;
             var executionContext = Invoke<TResult>(requestContext);
-            return executionContext.Result.GetData() as IEnumerable<TResult>;
+            return executionContext.Result.GetData() as IList<TResult>;
         }
 
-        public async Task<int> ExecuteAsync(RequestContext requestContext)
+        public async Task<int> ExecuteAsync(AbstractRequestContext requestContext)
         {
             requestContext.ExecutionType = ExecutionType.Execute;
             var executionContext = await InvokeAsync<int>(requestContext);
             return ((SingleResultContext<int>)executionContext.Result).Data;
         }
 
-        public async Task<TResult> ExecuteScalarAsync<TResult>(RequestContext requestContext)
+        public async Task<TResult> ExecuteScalarAsync<TResult>(AbstractRequestContext requestContext)
         {
             requestContext.ExecutionType = ExecutionType.ExecuteScalar;
             var executionContext = await InvokeAsync<TResult>(requestContext);
             return ((SingleResultContext<TResult>)executionContext.Result).Data;
         }
 
-        public async Task<IEnumerable<TResult>> QueryAsync<TResult>(RequestContext requestContext)
+        public async Task<IList<TResult>> QueryAsync<TResult>(AbstractRequestContext requestContext)
         {
             requestContext.ExecutionType = ExecutionType.Query;
             var executionContext = await InvokeAsync<TResult>(requestContext);
-            return executionContext.Result.GetData() as IEnumerable<TResult>;
+            return executionContext.Result.GetData() as IList<TResult>;
         }
 
-        public async Task<TResult> QuerySingleAsync<TResult>(RequestContext requestContext)
+        public async Task<TResult> QuerySingleAsync<TResult>(AbstractRequestContext requestContext)
         {
             requestContext.ExecutionType = ExecutionType.QuerySingle;
             var executionContext = await InvokeAsync<TResult>(requestContext);
             return ((SingleResultContext<TResult>)executionContext.Result).Data;
         }
 
-        public async Task<DataSet> GetDataSetAsync(RequestContext requestContext)
+        public async Task<DataSet> GetDataSetAsync(AbstractRequestContext requestContext)
         {
             requestContext.ExecutionType = ExecutionType.GetDataSet;
             var executionContext = await InvokeAsync<DataSet>(requestContext);
             return executionContext.Result.GetData() as DataSet;
         }
 
-        public async Task<DataTable> GetDataTableAsync(RequestContext requestContext)
+        public async Task<DataTable> GetDataTableAsync(AbstractRequestContext requestContext)
         {
             requestContext.ExecutionType = ExecutionType.GetDataTable;
             var executionContext = await InvokeAsync<DataTable>(requestContext);

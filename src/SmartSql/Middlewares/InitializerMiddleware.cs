@@ -31,7 +31,7 @@ namespace SmartSql.Middlewares
             InitRequest(executionContext.Request);
             InitParameterCollection(executionContext.Request);
         }
-        private void InitRequest(RequestContext requestContext)
+        private void InitRequest(AbstractRequestContext requestContext)
         {
             if (!String.IsNullOrEmpty(requestContext.RealSql))
             {
@@ -52,7 +52,7 @@ namespace SmartSql.Middlewares
             }
         }
 
-        private void InitByStatement(RequestContext requestContext, SqlMap sqlMap)
+        private void InitByStatement(AbstractRequestContext requestContext, SqlMap sqlMap)
         {
             requestContext.Statement = sqlMap.GetStatement(requestContext.FullSqlId);
             if (requestContext.Statement.SourceChoice.HasValue)
@@ -61,42 +61,37 @@ namespace SmartSql.Middlewares
             }
             else
             {
-
-                if ((StatementType.Write & requestContext.Statement.StatementType)
-                    == StatementType.Unknown)
-                {
-                    requestContext.DataSourceChoice = DataSourceChoice.Write;
-                }
+                requestContext.DataSourceChoice = (StatementType.Write & requestContext.Statement.StatementType)
+                                                  != StatementType.Unknown ? DataSourceChoice.Write : DataSourceChoice.Read;
             }
             if (requestContext.Statement.CommandType.HasValue)
             {
                 requestContext.CommandType = requestContext.Statement.CommandType.Value;
             }
-            if (String.IsNullOrEmpty(requestContext.ReadDb))
-            {
-                requestContext.ReadDb = requestContext.Statement.ReadDb;
-            }
+            requestContext.Transaction = requestContext.Transaction ?? requestContext.Statement.Transaction;
+            requestContext.CommandTimeout = requestContext.CommandTimeout ?? requestContext.Statement.CommandTimeout;
+            requestContext.ReadDb = requestContext.Statement.ReadDb;
             requestContext.CacheId = requestContext.Statement.CacheId;
             requestContext.Cache = requestContext.Statement.Cache;
-            //requestContext.ParameterMapId = requestContext.Statement.ParameterMapId;
-            //requestContext.ParameterMap = requestContext.Statement.ParameterMap;
+            requestContext.ParameterMapId = requestContext.Statement.ParameterMapId;
+            requestContext.ParameterMap = requestContext.Statement.ParameterMap;
             requestContext.ResultMapId = requestContext.Statement.ResultMapId;
             requestContext.ResultMap = requestContext.Statement.ResultMap;
             requestContext.MultipleResultMapId = requestContext.Statement.MultipleResultMapId;
             requestContext.MultipleResultMap = requestContext.Statement.MultipleResultMap;
         }
-        private void InitByMap(RequestContext requestContext, SqlMap sqlMap)
+        private void InitByMap(AbstractRequestContext requestContext, SqlMap sqlMap)
         {
             if (!string.IsNullOrEmpty(requestContext.CacheId))
             {
                 var fullCacheId = $"{requestContext.Scope}.{requestContext.CacheId}";
                 requestContext.Cache = sqlMap.GetCache(fullCacheId);
             }
-            //if (!String.IsNullOrEmpty(requestContext.ParameterMapId))
-            //{
-            //    var fullParameterMapIdId = $"{requestContext.Scope}.{requestContext.ParameterMapId}";
-            //    requestContext.ParameterMap = sqlMap.GetParameterMap(fullParameterMapIdId);
-            //}
+            if (!String.IsNullOrEmpty(requestContext.ParameterMapId))
+            {
+                var fullParameterMapIdId = $"{requestContext.Scope}.{requestContext.ParameterMapId}";
+                requestContext.ParameterMap = sqlMap.GetParameterMap(fullParameterMapIdId);
+            }
             if (!String.IsNullOrEmpty(requestContext.ResultMapId))
             {
                 var fullResultMapId = $"{requestContext.Scope}.{requestContext.ResultMapId}";
@@ -108,9 +103,9 @@ namespace SmartSql.Middlewares
                 requestContext.MultipleResultMap = sqlMap.GetMultipleResultMap(fullMultipleResultMapId);
             }
         }
-        private void InitParameterCollection(RequestContext requestContext)
+        private void InitParameterCollection(AbstractRequestContext requestContext)
         {
-            requestContext.Parameters = SqlParameterCollection.Create(requestContext);
+            requestContext.SetupParameters();
         }
     }
 }

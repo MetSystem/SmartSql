@@ -22,8 +22,11 @@ namespace SmartSql.Cache.Default
 
         public void Flush()
         {
-            _cacheKeys.Clear();
-            _cache.Clear();
+            lock (this)
+            {
+                _cacheKeys.Clear();
+                _cache.Clear();
+            }
         }
         public void Initialize(IDictionary<string, object> properties)
         {
@@ -38,19 +41,26 @@ namespace SmartSql.Cache.Default
         {
             lock (this)
             {
+                if (_cache.ContainsKey(cacheKey))
+                {
+                    return false;
+                }
+                _cacheKeys.Enqueue(cacheKey);
+                _cache.Add(cacheKey, cacheItem);
                 if (_cacheKeys.Count > _cacheSize)
                 {
                     var removedKey = _cacheKeys.Dequeue();
                     _cache.Remove(removedKey);
                 }
-                _cacheKeys.Enqueue(cacheKey);
-                _cache.Add(cacheKey, cacheItem);
             }
             return true;
         }
         public bool TryGetValue(CacheKey cacheKey, out object cacheItem)
         {
-            return _cache.TryGetValue(cacheKey, out cacheItem);
+            lock (this)
+            {
+                return _cache.TryGetValue(cacheKey, out cacheItem);
+            }
         }
     }
 }

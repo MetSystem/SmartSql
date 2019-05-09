@@ -6,20 +6,9 @@ using System.Text;
 
 namespace SmartSql.Test.Unit
 {
-    public abstract class AbstractTest : IDisposable
+    public abstract class AbstractTest
     {
         protected String DbType => "SqlServer";
         protected String ConnectionString => "Data Source=.;Initial Catalog=SmartSqlTestDB;Integrated Security=True";
-        protected IDbSessionFactory DbSessionFactory { get; }
-        public AbstractTest()
-        {
-            DbSessionFactory = SmartSqlBuilder.AddDataSource(DbProvider.SQLSERVER, ConnectionString)
-                .UseCache().Build().GetDbSessionFactory();
-        }
-
-        public void Dispose()
-        {
-            SmartSqlContainer.Instance.Dispose();
-        }
     }
 }

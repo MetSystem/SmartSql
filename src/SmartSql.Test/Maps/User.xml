@@ -1,32 +1,73 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <!--
-*******************************
- Create By Ahoo Wang 
- Date 2019-02-02 15:27
-*******************************
--->
-<SmartSqlMap Scope="User"  xmlns="http://SmartSql.net/schemas/SmartSqlMap-v4.xsd">
-  <ResultMaps>
-    <ResultMap Id="User">
-      <Result Column="ExtendedInfo" Property="Info"/>
-    </ResultMap>
-  </ResultMaps>
-  <MultipleResultMaps>
-    <MultipleResultMap Id="GetByPage">
-      <Result Property="List" MapId="User"/>
-      <Result Property="Total"/>
-    </MultipleResultMap>
-  </MultipleResultMaps>
+//*******************************
+// Create By Ahoo Wang
+// Date 2019-04-18 12:59
+// Code Generate By SmartCode
+// Code Generate Github : https://github.com/Ahoo-Wang/SmartCode
+//*******************************-->
+
+<SmartSqlMap Scope="User" xmlns="http://SmartSql.net/schemas/SmartSqlMap.xsd">
+  <Caches >
+    <Cache Id="RedisCache" Type="${RedisCacheProvider}">
+      <Property Name="DatabaseId" Value="3"/>
+      <Property Name="ConnectionString" Value="${Redis}"/>
+      <FlushOnExecute Statement="Insert"/>
+      <FlushOnExecute Statement="Update"/>
+      <FlushOnExecute Statement="Delete"/>
+    </Cache>
+  </Caches>
   <Statements>
-    <Statement Id="GetById" ResultMap="User">
-      Select Top 1 T.* From T_User T With(NoLock)
+    <Statement Id="QueryParams">
       <Where>
-        T.Id=@Id
+        <IsNotEmpty Prepend="And" Property="Id">
+          T.Id = @Id
+        </IsNotEmpty>
+        <IsNotEmpty Prepend="And" Property="UserName">
+          T.UserName = @UserName
+        </IsNotEmpty>
+        <IsNotEmpty Prepend="And" Property="Status">
+          T.Status = @Status
+        </IsNotEmpty>
       </Where>
     </Statement>
-    <Statement Id="QueryParams">
 
+
+    <!--新增-->
+    <Statement Id="Insert">
+      INSERT INTO T_User
+      (
+      UserName,
+      Status
+      )
+      VALUES
+      (
+      @UserName,
+      @Status
+      )
+      ;Select Scope_Identity();
     </Statement>
+
+    <!--删除-->
+    <Statement Id="Delete">
+      Delete From T_User
+      Where Id=@Id
+    </Statement>
+
+    <!--更新-->
+    <Statement Id="Update">
+      UPDATE T_User
+      <Set>
+        <IsProperty Prepend="," Property="UserName">
+          UserName = @UserName
+        </IsProperty>
+        <IsProperty Prepend="," Property="Status">
+          Status = @Status
+        </IsProperty>
+      </Set>
+      Where Id=@Id
+    </Statement>
+
     <!--获取数据列-->
     <Statement Id="Query" >
       SELECT
@@ -41,26 +82,43 @@
         </Default>
       </Switch>
     </Statement>
-    <Statement Id="Insert">
-      <IdGenerator Id="Id"/>
-      INSERT INTO [T_User]
-      ([Id]
-      ,[UserName]
-      ,[ExtendedInfo])
-      VALUES
-      (@Id
-      ,@UserName
-      ,@Info);
-      Select @Id;
-    </Statement>
-    <Statement Id="GetByPage" MultipleResultMap="GetByPage">
+
+
+    <!--获取分页数据-->
+    <Statement Id="QueryByPage" >
       Select T.* From T_User T With(NoLock)
       <Include RefId="QueryParams" />
       Order By T.Id Desc
       Offset ((@PageIndex-1)*@PageSize) Rows Fetch Next @PageSize Rows Only;
 
       Select Count(1) From T_User T
-      <Include RefId="QueryParams" />;
+      <Include RefId="QueryParams" />
     </Statement>
+
+
+    <!--获取记录数-->
+    <Statement Id="GetRecord">
+      Select Count(1) From T_User T
+      <Include RefId="QueryParams" />
+    </Statement>
+
+    <!--获取表映射实体-->
+    <Statement Id="GetEntity" >
+      Select Top 1 T.* From T_User T With(NoLock)
+      <Where Min="1">
+        <IsNotEmpty Prepend="And" Property="Id">
+          T.Id=@Id
+        </IsNotEmpty>
+      </Where>
+    </Statement>
+
+
+    <!--是否存在该记录-->
+    <Statement Id="IsExist">
+      Select Count(1) From T_User T
+      <Include RefId="QueryParams" />
+    </Statement>
+
+
   </Statements>
 </SmartSqlMap>

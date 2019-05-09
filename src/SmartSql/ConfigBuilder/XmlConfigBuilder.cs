@@ -1,69 +1,62 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text;
 using SmartSql.Configuration;
-using SmartSql.Configuration.Tags;
 using SmartSql.Utils;
 using System.Xml;
 using SmartSql.DataSource;
 using SmartSql.Exceptions;
 using SmartSql.Reflection;
-using System.IO;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using SmartSql.IdGenerator;
 
 namespace SmartSql.ConfigBuilder
 {
-    public class XmlConfigBuilder : IConfigBuilder
+    public class XmlConfigBuilder : AbstractConfigBuilder
     {
-        public const String SMART_SQL_CONFIG_NAMESPACE = "http://SmartSql.net/schemas/SmartSqlMapConfig-v4.xsd";
+        private readonly ResourceType _resourceType;
+        private readonly string _resourcePath;
+        private readonly ILoggerFactory _loggerFactory;
+        public const String SMART_SQL_CONFIG_NAMESPACE = "http://SmartSql.net/schemas/SmartSqlMapConfig.xsd";
         public const String CONFIG_PREFIX = "Config";
         public const String TYPE_ATTRIBUTE = "Type";
-        protected XmlDocument XmlConfig { get; }
-        protected XmlNamespaceManager XmlNsManager { get; }
-        protected XmlNode XmlConfigRoot { get; }
-        protected SmartSqlConfig SmartSqlConfig { get; set; }
+        protected XmlDocument XmlConfig { get; private set; }
+        protected XmlNamespaceManager XmlNsManager { get; private set; }
+        protected XmlNode XmlConfigRoot { get; private set; }
         private readonly IIdGeneratorBuilder _idGeneratorBuilder = new IdGeneratorBuilder();
-        public XmlConfigBuilder(ResourceType resourceType, string resourcePath)
+        public XmlConfigBuilder(ResourceType resourceType, string resourcePath, ILoggerFactory loggerFactory = null)
         {
-            XmlConfig = ResourceUtil.LoadAsXml(resourceType, resourcePath);
+            _resourceType = resourceType;
+            _resourcePath = resourcePath;
+            _loggerFactory = loggerFactory ?? NullLoggerFactory.Instance;
+            Logger = _loggerFactory.CreateLogger<XmlConfigBuilder>();
+        }
+
+        public override void Dispose()
+        {
+
+        }
+        protected override void OnBeforeBuild()
+        {
+            XmlConfig = ResourceUtil.LoadAsXml(_resourceType, _resourcePath);
             XmlNsManager = new XmlNamespaceManager(XmlConfig.NameTable);
             XmlNsManager.AddNamespace(CONFIG_PREFIX, SMART_SQL_CONFIG_NAMESPACE);
             XmlConfigRoot = XmlConfig.SelectSingleNode($"/{CONFIG_PREFIX}:SmartSqlMapConfig", XmlNsManager);
-        }
-
-        public void Dispose()
-        {
-
-        }
-
-        protected void InitDefault()
-        {
-            SmartSqlConfig = new SmartSqlConfig();
-        }
-
-        public SmartSqlConfig Build()
-        {
-            InitDefault();
-            BuildSettings();
-            BuildProperties();
-            BuildIdGenerator();
-            BuildDatabase();
-            BuildTypeHandlers();
-            BuildTagBuilders();
-            BuildSqlMaps();
-            if (SmartSqlConfig.StatementAnalyzer == null)
+            if (Logger.IsEnabled(LogLevel.Debug))
             {
-                SmartSqlConfig.StatementAnalyzer = new StatementAnalyzer();
+                Logger.LogDebug($"XmlConfigBuilder Build ->> ResourceType:[{_resourceType}] , Path :[{_resourcePath}] Starting.");
             }
-            if (SmartSqlConfig.SqlParamAnalyzer == null)
-            {
-                SmartSqlConfig.SqlParamAnalyzer = new SqlParamAnalyzer(SmartSqlConfig.Settings.IgnoreParameterCase, SmartSqlConfig.Database.DbProvider.ParameterPrefix);
-            }
-            EnsureDependency();
-            return SmartSqlConfig;
         }
+        protected override void OnAfterBuild()
+        {
+            if (Logger.IsEnabled(LogLevel.Debug))
+            {
+                Logger.LogDebug($"XmlConfigBuilder Build ->> ResourceType:[{_resourceType}] , Path :[{_resourcePath}] End.");
+            }
+        }
+
         #region  0. Settings
-        protected void BuildSettings()
+        protected override void BuildSettings()
         {
             var settingsXPath = $"{CONFIG_PREFIX}:Settings";
             var settingsNode = XmlConfigRoot.SelectSingleNode(settingsXPath, XmlNsManager);
@@ -89,33 +82,43 @@ namespace SmartSql.ConfigBuilder
         }
         #endregion
         #region 1. Properties
-        private void BuildProperties()
+        protected override void BuildProperties()
         {
-            SmartSqlConfig.Properties = new Properties();
             var properties = ParseProperties(XmlConfigRoot);
-            SmartSqlConfig.Properties.Load(properties);
+            SmartSqlConfig.Properties.Import(properties);
         }
         #endregion
         #region 2. IdGen
-        private void BuildIdGenerator()
+        protected override void BuildIdGenerators()
         {
-            var settingsXPath = $"{CONFIG_PREFIX}:IdGenerator";
-            var idGeneratorNode = XmlConfigRoot.SelectSingleNode(settingsXPath, XmlNsManager);
-            if (idGeneratorNode == null)
+            var idGenXPath = $"{CONFIG_PREFIX}:IdGenerators/{CONFIG_PREFIX}:IdGenerator";
+            var idGenNodes = XmlConfigRoot.SelectNodes(idGenXPath, XmlNsManager);
+            if (idGenNodes != null)
             {
-                return;
+                SmartSqlConfig.IdGenerators.Clear();
+                foreach (XmlNode idGenNode in idGenNodes)
+                {
+                    BuildIdGenerator(idGenNode);
+                }
             }
-
-            if (!idGeneratorNode.Attributes.TryGetValueAsString("Type", out string typeString, SmartSqlConfig.Properties))
+        }
+        private void BuildIdGenerator(XmlNode idGenNode)
+        {
+            if (!idGenNode.Attributes.TryGetValueAsString("Name", out string name, SmartSqlConfig.Properties))
+            {
+                throw new SmartSqlException("IdGenerator.Name can not be null.");
+            }
+            if (!idGenNode.Attributes.TryGetValueAsString("Type", out string typeString, SmartSqlConfig.Properties))
             {
                 throw new SmartSqlException("IdGenerator.Type can not be null.");
             }
-            var parameters = ParseProperties(idGeneratorNode);
-            SmartSqlConfig.IdGenerator = _idGeneratorBuilder.Build(typeString, parameters);
+            var parameters = ParseProperties(idGenNode);
+            var idGen = _idGeneratorBuilder.Build(typeString, parameters);
+            SmartSqlConfig.IdGenerators.Add(name, idGen);
         }
         #endregion
         #region 2. Database
-        protected void BuildDatabase()
+        protected override void BuildDatabase()
         {
             Database database = new Database
             {
@@ -134,14 +137,12 @@ namespace SmartSql.ConfigBuilder
             database.Write = ParseWriteDataSource(writeDataSourceNode);
             database.Write.DbProvider = database.DbProvider;
             var readDataSourceNodes = databaseNode.SelectNodes($"{CONFIG_PREFIX}:Read", XmlNsManager);
-            if (readDataSourceNodes != null)
+            if (readDataSourceNodes == null) return;
+            foreach (XmlNode readNode in readDataSourceNodes)
             {
-                foreach (XmlNode readNode in readDataSourceNodes)
-                {
-                    var readDb = ParseReadDataSource(readNode);
-                    readDb.DbProvider = database.DbProvider;
-                    database.Reads.Add(readDb.Name, readDb);
-                }
+                var readDb = ParseReadDataSource(readNode);
+                readDb.DbProvider = database.DbProvider;
+                database.Reads.Add(readDb.Name, readDb);
             }
         }
 
@@ -240,7 +241,7 @@ namespace SmartSql.ConfigBuilder
         }
         #endregion
         #region 3. TypeHandlers
-        protected void BuildTypeHandlers()
+        protected override void BuildTypeHandlers()
         {
             var typeHandlerXPath = $"{CONFIG_PREFIX}:TypeHandlers/{CONFIG_PREFIX}:TypeHandler";
             var typeHandlerNodes = XmlConfigRoot.SelectNodes(typeHandlerXPath, XmlNsManager);
@@ -256,41 +257,47 @@ namespace SmartSql.ConfigBuilder
         {
             TypeHandler typeHandlerConfig = new TypeHandler
             {
-                Parameters = ParseProperties(typeHandlerNode)
+                Properties = ParseProperties(typeHandlerNode)
             };
-            typeHandlerNode.Attributes.TryGetValueAsString(nameof(TypeHandler.Name), out string handlerName, SmartSqlConfig.Properties);
-            typeHandlerNode.Attributes.TryGetValueAsString("MappedType", out string csharpTypeStr, SmartSqlConfig.Properties);
+            if (typeHandlerNode.Attributes.TryGetValueAsString(nameof(TypeHandler.Name), out string handlerName, SmartSqlConfig.Properties))
+            {
+                typeHandlerConfig.Name = handlerName;
+            }
             if (!typeHandlerNode.Attributes.TryGetValueAsString(TYPE_ATTRIBUTE, out string type, SmartSqlConfig.Properties))
             {
                 throw new SmartSqlException("TypeHandler.Type can not be null.");
             }
-            typeHandlerConfig.Name = handlerName;
             typeHandlerConfig.HandlerType = TypeUtils.GetType(type);
 
             if (typeHandlerConfig.HandlerType.IsGenericType)
             {
-                if (String.IsNullOrEmpty(csharpTypeStr))
+                typeHandlerNode.Attributes.TryGetValueAsString(nameof(TypeHandler.PropertyType), out string propertyTypeStr, SmartSqlConfig.Properties);
+                typeHandlerNode.Attributes.TryGetValueAsString(nameof(TypeHandler.FieldType), out string fieldTypeStr, SmartSqlConfig.Properties);
+
+                if (String.IsNullOrEmpty(propertyTypeStr))
                 {
-                    throw new SmartSqlException("TypeHandler.MappedType can not be null.");
+                    throw new SmartSqlException("TypeHandler.PropertyType can not be null.");
                 }
-                typeHandlerConfig.MappedType = TypeUtils.GetType(csharpTypeStr);
+                typeHandlerConfig.PropertyType = TypeUtils.GetType(propertyTypeStr);
+                if (!String.IsNullOrEmpty(fieldTypeStr))
+                {
+                    typeHandlerConfig.FieldType = TypeUtils.GetType(fieldTypeStr);
+                }
             }
-            SmartSqlConfig.TypeHandlerFactory.Register(typeHandlerConfig);
+            RegisterTypeHandler(typeHandlerConfig);
         }
 
 
         #endregion
         #region 4. TagBuilders
-        protected void BuildTagBuilders()
+        protected override void BuildTagBuilders()
         {
             var tagBuilderXPath = $"{CONFIG_PREFIX}:TagBuilders/{CONFIG_PREFIX}:TagBuilder";
             var tagBuilderNodes = XmlConfigRoot.SelectNodes(tagBuilderXPath, XmlNsManager);
-            if (tagBuilderNodes != null)
+            if (tagBuilderNodes == null) return;
+            foreach (XmlNode tagBuilderNode in tagBuilderNodes)
             {
-                foreach (XmlNode tagBuilderNode in tagBuilderNodes)
-                {
-                    BuildTagBuilder(tagBuilderNode);
-                }
+                BuildTagBuilder(tagBuilderNode);
             }
         }
         private void BuildTagBuilder(XmlNode tagBuilderNode)
@@ -305,23 +312,20 @@ namespace SmartSql.ConfigBuilder
             {
                 throw new SmartSqlException("TagBuilder.Type can not be null.");
             }
-
-            var tagBuilderType = TypeUtils.GetType(type);
-            var tagBuilderObj = SmartSqlConfig.ObjectFactoryBuilder.GetObjectFactory(tagBuilderType, Type.EmptyTypes)(null) as ITagBuilder;
-            SmartSqlConfig.TagBuilderFactory.Register(name, tagBuilderObj);
+            RegisterTagBuilder(name, type);
         }
+
+
         #endregion
         #region 5. SmartSqlMaps
-        protected void BuildSqlMaps()
+        protected override void BuildSqlMaps()
         {
             var sqlMapXPath = $"{CONFIG_PREFIX}:SmartSqlMaps/{CONFIG_PREFIX}:SmartSqlMap";
             var sqlMapNodes = XmlConfigRoot.SelectNodes(sqlMapXPath, XmlNsManager);
-            if (sqlMapNodes != null)
+            if (sqlMapNodes == null) return;
+            foreach (XmlNode sqlMapNode in sqlMapNodes)
             {
-                foreach (XmlNode sqlMapNode in sqlMapNodes)
-                {
-                    BuildSqlMap(sqlMapNode);
-                }
+                BuildSqlMap(sqlMapNode);
             }
         }
         protected void BuildSqlMap(XmlNode sqlMapNode)
@@ -334,218 +338,22 @@ namespace SmartSql.ConfigBuilder
             if (!sqlMapNode.Attributes.TryGetValueAsString(TYPE_ATTRIBUTE, out string type, SmartSqlConfig.Properties)
             )
             {
-                throw new SmartSqlException("TagBuilder.Type can not be null.");
+                throw new SmartSqlException("SmartSqlMap.Type can not be null.");
             }
             ResourceType resourceType = ResourceType.File;
             Enum.TryParse<ResourceType>(type, out resourceType);
-            switch (resourceType)
+            if (Logger.IsEnabled(LogLevel.Debug))
             {
-                case ResourceType.Embedded:
-                case ResourceType.File:
-                    {
-                        var sqlMapXml = ResourceUtil.LoadAsXml(resourceType, path);
-                        BuildSqlMap(sqlMapXml, SmartSqlConfig);
-                        break;
-                    }
-                case ResourceType.Directory:
-                case ResourceType.DirectoryWithAllSub:
-                    {
-                        SearchOption searchOption = SearchOption.TopDirectoryOnly;
-                        if (resourceType == ResourceType.DirectoryWithAllSub)
-                        {
-                            searchOption = SearchOption.AllDirectories;
-                        }
-                        var dicPath = Path.Combine(AppContext.BaseDirectory, path);
-                        var childSqlMapSources = Directory.EnumerateFiles(dicPath, "*.xml", searchOption);
-                        foreach (var sqlMapPath in childSqlMapSources)
-                        {
-                            var sqlMapXml = ResourceUtil.LoadFileAsXml(sqlMapPath);
-                            BuildSqlMap(sqlMapXml, SmartSqlConfig);
-                        }
-                        break;
-                    }
+                Logger.LogDebug($"XmlConfigBuilder BuildSqlMap ->> ResourceType:[{resourceType}] , Path :[{path}] Starting.");
             }
-        }
-        private void BuildSqlMap(XmlDocument sqlMapXml, SmartSqlConfig smartSqlConfig)
-        {
-            SqlMapBuilder sqlMapXmlParser = new SqlMapBuilder(sqlMapXml, smartSqlConfig);
-            sqlMapXmlParser.Build();
-        }
-        #endregion
-        #region 6. EnsureDependency
-
-        private SqlMap EnsureSqlMap(string scope)
-        {
-            if (!SmartSqlConfig.SqlMaps.TryGetValue(scope, out SqlMap sqlMap))
+            BuildSqlMap(resourceType, path);
+            if (Logger.IsEnabled(LogLevel.Debug))
             {
-                throw new SmartSqlException($"ConfigLoader can not find SqlMap.Scoe:{scope}");
-            }
-            return sqlMap;
-        }
-        private ResultMap EnsureResultMap(string fullMapId)
-        {
-            var scope = fullMapId.Split('.')[0];
-            var sqlMap = EnsureSqlMap(scope);
-            if (!sqlMap.ResultMaps.TryGetValue(fullMapId, out ResultMap resultMap))
-            {
-                throw new SmartSqlException($"ConfigLoader can not find ResultMap.Id:{fullMapId}");
-            }
-            return resultMap;
-        }
-        /// <summary>
-        /// 初始化依赖And检测循环依赖
-        /// </summary>
-        protected void EnsureDependency()
-        {
-            #region Init Statement.Include
-            foreach (var sqlMap in SmartSqlConfig.SqlMaps)
-            {
-                foreach (var statementKV in sqlMap.Value.Statements)
-                {
-                    foreach (var include in statementKV.Value.IncludeDependencies)
-                    {
-                        if (include.RefId == include.Statement.FullSqlId)
-                        {
-                            throw new SmartSqlException($"Include.RefId can not be self statement.id:{include.RefId}");
-                        }
-                        var scope = include.RefId.Split('.')[0];
-
-                        var refSqlMap = EnsureSqlMap(scope);
-                        if (!refSqlMap.Statements.TryGetValue(include.RefId, out Statement refStatement))
-                        {
-                            throw new SmartSqlException($"Include can not find statement.id:{include.RefId}");
-                        }
-                        include.Ref = refStatement;
-                    }
-                }
-            }
-            #endregion
-            #region Check Statement.Include Cyclic Dependency
-            foreach (var sqlMap in SmartSqlConfig.SqlMaps)
-            {
-                foreach (var statementKV in sqlMap.Value.Statements)
-                {
-                    CheckIncludeCyclicDependency(statementKV.Value, statementKV.Value.IncludeDependencies);
-                }
-            }
-            #endregion
-            foreach (var sqlMapKV in SmartSqlConfig.SqlMaps)
-            {
-                var sqlMap = sqlMapKV.Value;
-                #region Init MultipleResultMaps
-                foreach (var mResultKV in sqlMap.MultipleResultMaps)
-                {
-                    var mResult = mResultKV.Value;
-                    if (!String.IsNullOrEmpty(mResult.Root?.MapId))
-                    {
-                        mResult.Root.Map = EnsureResultMap(mResult.Root.MapId);
-                    }
-                    foreach (var result in mResult.Results)
-                    {
-                        if (String.IsNullOrEmpty(result?.MapId))
-                        {
-                            continue;
-                        }
-                        result.Map = EnsureResultMap(result.MapId);
-                    }
-                }
-                #endregion
-                #region Init Statement Attribute For Cache & ResultMap & ParameterMap & MultipleResultMap
-                foreach (var statementKV in sqlMap.Statements)
-                {
-                    var statement = statementKV.Value;
-                    if (!String.IsNullOrEmpty(statement.CacheId))
-                    {
-                        var scope = statement.CacheId.Split('.')[0];
-                        if (!EnsureSqlMap(scope).Caches.TryGetValue(statement.CacheId, out Configuration.Cache cache))
-                        {
-                            throw new SmartSqlException($"Statement.Id:{statement.FullSqlId} can not find Cache.Id:{statement.CacheId}");
-                        }
-                        statement.Cache = cache;
-                    }
-
-                    if (!String.IsNullOrEmpty(statement.ResultMapId))
-                    {
-                        var scope = statement.ResultMapId.Split('.')[0];
-                        if (!EnsureSqlMap(scope).ResultMaps.TryGetValue(statement.ResultMapId, out ResultMap resultMap))
-                        {
-                            throw new SmartSqlException($"Statement.Id:{statement.FullSqlId} can not find ResultMap.Id:{statement.ResultMapId}");
-                        }
-                        statement.ResultMap = resultMap;
-                    }
-
-                    if (!String.IsNullOrEmpty(statement.MultipleResultMapId))
-                    {
-                        var scope = statement.MultipleResultMapId.Split('.')[0];
-                        if (!EnsureSqlMap(scope).MultipleResultMaps.TryGetValue(statement.MultipleResultMapId, out MultipleResultMap multipleResultMap))
-                        {
-                            throw new SmartSqlException($"Statement.Id:{statement.FullSqlId} can not find MultipleResultMap.Id:{statement.MultipleResultMapId}");
-                        }
-                        statement.MultipleResultMap = multipleResultMap;
-                    }
-                }
-                #endregion
-            }
-            #region Init Statement.SqlCommandType
-            foreach (var sqlMapKV in SmartSqlConfig.SqlMaps)
-            {
-                foreach (var statementKV in sqlMapKV.Value.Statements)
-                {
-                    var statement = statementKV.Value;
-                    var fullSqlTextBuilder = new StringBuilder();
-                    BuildStatementFullSql(statement, fullSqlTextBuilder);
-                    var fullSqlText = fullSqlTextBuilder.ToString();
-                    statement.StatementType = SmartSqlConfig.StatementAnalyzer.Analyse(fullSqlText);
-                }
-            }
-            #endregion
-        }
-        private void CheckIncludeCyclicDependency(Statement statement, IEnumerable<Include> dependencies)
-        {
-            foreach (var dependency in dependencies)
-            {
-                if (statement == dependency.Ref)
-                {
-                    string errMsg = $"Detecting Statement.Id:{statement.FullSqlId} and Statement.Id:{dependency.Statement.FullSqlId} have cyclic dependency!";
-                    throw new SmartSqlException(errMsg);
-                }
-                CheckIncludeCyclicDependency(statement, dependency.Ref.IncludeDependencies);
-            }
-        }
-
-        #region  BuildStatementFullSql
-        private void BuildStatementFullSql(Statement statement, StringBuilder fullSqlTextBuilder)
-        {
-            foreach (var tag in statement.SqlTags)
-            {
-                if (tag is Include include)
-                {
-                    BuildStatementFullSql(include.Ref, fullSqlTextBuilder);
-                }
-                else
-                {
-                    BuildTagFullSql(statement, tag, fullSqlTextBuilder);
-                }
-            }
-        }
-        private void BuildTagFullSql(Statement statement, ITag tag, StringBuilder fullSqlTextBuilder)
-        {
-            if (tag is SqlText sqlText)
-            {
-                fullSqlTextBuilder.Append(sqlText.BodyText);
-                return;
-            }
-            if (tag is Tag parentTag && parentTag.ChildTags != null)
-            {
-                foreach (var childTag in parentTag.ChildTags)
-                {
-                    BuildTagFullSql(statement, childTag, fullSqlTextBuilder);
-                }
+                Logger.LogDebug($"XmlConfigBuilder BuildSqlMap ->> ResourceType:[{resourceType}] , Path :[{path}] End.");
             }
         }
         #endregion
 
-        #endregion
         private IDictionary<String, object> ParseProperties(XmlNode parentNode)
         {
             var parametersNode = parentNode.SelectSingleNode($"{CONFIG_PREFIX}:Properties", XmlNsManager);

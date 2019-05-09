@@ -6,22 +6,29 @@ using Xunit;
 
 namespace SmartSql.Test.Unit.Cache
 {
-    public class LruCacheProviderTest : AbstractXmlConfigBuilderTest
+    [Collection("GlobalSmartSql")]
+    public class LruCacheProviderTest 
     {
+        protected ISqlMapper SqlMapper { get; }
+
+        public LruCacheProviderTest(SmartSqlFixture smartSqlFixture)
+        {
+            SqlMapper = smartSqlFixture.SqlMapper;
+        }
         [Fact]
         public void QueryByLruCache()
         {
-            var list = DbSession.Query<AllPrimitive>(new RequestContext
+            var list = SqlMapper.Query<AllPrimitive>(new RequestContext
             {
                 Scope = nameof(AllPrimitive),
                 SqlId = "QueryByLruCache"
             });
-            var cachedList = DbSession.Query<AllPrimitive>(new RequestContext
+            var cachedList = SqlMapper.Query<AllPrimitive>(new RequestContext
             {
                 Scope = nameof(AllPrimitive),
                 SqlId = "QueryByLruCache"
             });
-            Assert.Equal(list, cachedList);
+            Assert.Equal(list.GetHashCode(), cachedList.GetHashCode());
         }
     }
 }

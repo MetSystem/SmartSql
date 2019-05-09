@@ -1,4 +1,5 @@
-﻿using System;
+﻿using SmartSql.Exceptions;
+using System;
 using System.Collections.Generic;
 
 namespace SmartSql.Configuration.Tags
@@ -7,12 +8,13 @@ namespace SmartSql.Configuration.Tags
     {
         public virtual String Prepend { get; set; }
         public String Property { get; set; }
+        public bool Required { get; set; }
         public IList<ITag> ChildTags { get; set; }
         public ITag Parent { get; set; }
         public Statement Statement { get; set; }
 
-        public abstract bool IsCondition(RequestContext context);
-        public virtual void BuildSql(RequestContext context)
+        public abstract bool IsCondition(AbstractRequestContext context);
+        public virtual void BuildSql(AbstractRequestContext context)
         {
             if (IsCondition(context))
             {
@@ -30,24 +32,25 @@ namespace SmartSql.Configuration.Tags
             }
         }
 
-        public virtual void BuildChildSql(RequestContext context)
+        public virtual void BuildChildSql(AbstractRequestContext context)
         {
-            if (ChildTags != null && ChildTags.Count > 0)
+            if (ChildTags == null || ChildTags.Count <= 0) return;
+            foreach (var childTag in ChildTags)
             {
-                foreach (var childTag in ChildTags)
-                {
-                    childTag.BuildSql(context);
-                }
+                childTag.BuildSql(context);
             }
         }
-        protected virtual String GetDbProviderPrefix(RequestContext context)
+        protected virtual String GetDbProviderPrefix(AbstractRequestContext context)
         {
-            return context.ExecutionContext.SmartSqlConfig.Settings.ParameterPrefix;
+            return context.ExecutionContext.SmartSqlConfig.Database.DbProvider.ParameterPrefix;
         }
-
-        protected virtual Object GetPropertyValue(RequestContext context)
+        protected virtual object EnsurePropertyValue(AbstractRequestContext context)
         {
-            context.Parameters.TryGetParameterValue(Property, out object paramVal);
+            var existProperty = context.Parameters.TryGetParameterValue(Property, out object paramVal);
+            if (Required && !existProperty)
+            {
+                throw new TagRequiredFailException(this);
+            }
             return paramVal;
         }
     }

@@ -3,12 +3,13 @@ using SmartSql.Reflection.TypeConstants;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Reflection.Emit;
 using System.Text;
+using SmartSql.Annotations;
 
 namespace SmartSql.Reflection.Convert
 {
-    public class IgnoreCase { }
     public static class RequestConvertCache<TRequest>
     {
         public static Func<object, SqlParameterCollection> Convert { get; private set; }
@@ -34,7 +35,7 @@ namespace SmartSql.Reflection.Convert
             var dynamicMethod = new DynamicMethod(Guid.NewGuid().ToString("N"), SqlParameterType.SqlParameterCollection, new[] { CommonType.Object }, requestType, true);
             var ilGen = dynamicMethod.GetILGenerator();
             ilGen.DeclareLocal(SqlParameterType.SqlParameterCollection);
-            var ignoreCase = typeof(TIgnoreCase) == typeof(IgnoreCase);
+            var ignoreCase = typeof(TIgnoreCase) == typeof(IgnoreCaseType);
             ilGen.LoadInt32(ignoreCase ? 1 : 0);
             ilGen.New(SqlParameterType.Ctor.SqlParameterCollection);
             ilGen.StoreLocalVar(0);
@@ -51,7 +52,9 @@ namespace SmartSql.Reflection.Convert
                 ilGen.LoadType(prop.PropertyType);
                 ilGen.New(SqlParameterType.Ctor.SqlParameter);
                 ilGen.Dup();
-                var getHandlerMethod = TypeHandlerCacheType.GetHandlerMethod(prop.PropertyType);
+                var column = prop.GetCustomAttribute<ColumnAttribute>();
+                var getHandlerMethod = column?.FieldType != null ? TypeHandlerCacheType.GetHandlerMethod(prop.PropertyType, column?.FieldType)
+                    : PropertyTypeHandlerCacheType.GetHandlerMethod(prop.PropertyType);
                 ilGen.Call(getHandlerMethod);
                 ilGen.Call(SqlParameterType.Method.SetTypeHandler);
                 ilGen.Call(SqlParameterType.Method.Add);

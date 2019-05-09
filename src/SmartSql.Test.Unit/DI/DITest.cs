@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using SmartSql.DataSource;
 using SmartSql.DbSession;
+using SmartSql.Test.Repositories;
 using SmartSql.Test.Unit.DyRepository;
 using Xunit;
 
@@ -16,10 +17,9 @@ namespace SmartSql.Test.Unit.DI
         public void AddSmartSql()
         {
             IServiceCollection services = new ServiceCollection();
-            services.AddSmartSql();
+            services.AddSmartSql("AddSmartSql");
             var serviceProvider = services.BuildServiceProvider();
             GetSmartSqlService(serviceProvider);
-            SmartSqlContainer.Instance.Dispose();
         }
 
         private void GetSmartSqlService(IServiceProvider serviceProvider)
@@ -35,11 +35,10 @@ namespace SmartSql.Test.Unit.DI
             IServiceCollection services = new ServiceCollection();
             services.AddSmartSql(sp =>
             {
-                return SmartSqlBuilder.AddDataSource(DbProvider.SQLSERVER, ConnectionString);
+                return new SmartSqlBuilder().UseAlias("AddSmartSql_Func").UseDataSource(DbProvider.SQLSERVER, ConnectionString);
             });
             var serviceProvider = services.BuildServiceProvider();
             GetSmartSqlService(serviceProvider);
-            SmartSqlContainer.Instance.Dispose();
         }
         [Fact]
         public void AddSmartSql_Action()
@@ -47,29 +46,27 @@ namespace SmartSql.Test.Unit.DI
             IServiceCollection services = new ServiceCollection();
             services.AddSmartSql((sp, smartsqlBuilder) =>
             {
-                smartsqlBuilder.UseAlias("SmartSqlIsGood");
+                smartsqlBuilder.UseAlias("AddSmartSql_Action");
             });
             var serviceProvider = services.BuildServiceProvider();
             GetSmartSqlService(serviceProvider);
-            SmartSqlContainer.Instance.Dispose();
         }
         [Fact]
         public void AddRepositoryFromAssembly()
         {
             IServiceCollection services = new ServiceCollection();
-            services.AddSmartSql()
+            services.AddSmartSql("AddRepositoryFromAssembly")
             .AddRepositoryFromAssembly(o =>
             {
-                o.AssemblyString = "SmartSql.Test.Unit";
+                o.AssemblyString = "SmartSql.Test";
                 o.Filter = (type) =>
                 {
-                    return type.Namespace == "SmartSql.Test.Unit.DyRepository";
+                    return type.Namespace == "SmartSql.Test.Repositories";
                 };
             });
             var serviceProvider = services.BuildServiceProvider();
             GetSmartSqlService(serviceProvider);
             IAllPrimitiveRepository allPrimitiveRepository = serviceProvider.GetRequiredService<IAllPrimitiveRepository>();
-            SmartSqlContainer.Instance.Dispose();
         }
         [Fact]
         public void AddRepositoryFromAssembly_Alias()
@@ -79,16 +76,15 @@ namespace SmartSql.Test.Unit.DI
             .AddRepositoryFromAssembly(o =>
             {
                 o.SmartSqlAlias = "AddRepositoryFromAssembly_Alias";
-                o.AssemblyString = "SmartSql.Test.Unit";
+                o.AssemblyString = "SmartSql.Test";
                 o.Filter = (type) =>
                 {
-                    return type.Namespace == "SmartSql.Test.Unit.DyRepository";
+                    return type.Namespace == "SmartSql.Test.Repositories";
                 };
             });
             var serviceProvider = services.BuildServiceProvider();
             GetSmartSqlService(serviceProvider);
             IAllPrimitiveRepository allPrimitiveRepository = serviceProvider.GetRequiredService<IAllPrimitiveRepository>();
-            SmartSqlContainer.Instance.Dispose();
         }
     }
 }

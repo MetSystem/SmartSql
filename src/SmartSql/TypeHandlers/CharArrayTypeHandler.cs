@@ -6,9 +6,19 @@ using System.Text;
 
 namespace SmartSql.TypeHandlers
 {
-    public class CharArrayTypeHandler : AbstractTypeHandler<Char[]>
+    public class CharArrayTypeHandler : AbstractNullableTypeHandler<Char[], Char[]>
     {
-        public override Char[] GetValue(DataReaderWrapper dataReader, int columnIndex)
+        protected override Char[] GetValueWhenNotNull(DataReaderWrapper dataReader, int columnIndex)
+        {
+            int bufferLength = (int)dataReader.GetChars(columnIndex, 0, null, 0, 0);
+            Char[] charArray = new Char[bufferLength];
+            dataReader.GetChars(columnIndex, 0, charArray, 0, bufferLength);
+            return charArray;
+        }
+    }
+    public class CharArrayAnyTypeHandler : AbstractNullableTypeHandler<Char[], AnyFieldType>
+    {
+        protected override Char[] GetValueWhenNotNull(DataReaderWrapper dataReader, int columnIndex)
         {
             int bufferLength = (int)dataReader.GetChars(columnIndex, 0, null, 0, 0);
             Char[] charArray = new Char[bufferLength];

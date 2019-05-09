@@ -8,9 +8,11 @@ namespace SmartSql.Configuration.Tags.TagBuilders
 {
     public abstract class AbstractTagBuilder : ITagBuilder
     {
-        private const String PREPEND = "Prepend";
-        private const String PROPERTY = "Property";
-        private const String COMPARE_VALUE = "CompareValue";
+        private const String PREPEND = nameof(Tag.Prepend);
+        private const String PROPERTY = nameof(Tag.Property);
+        private const String REQUIRED = nameof(Tag.Required);
+        private const String MIN = nameof(Dynamic.Min);
+        private const String COMPARE_VALUE = nameof(NumericalCompareTag.CompareValue);
         public abstract ITag Build(XmlNode xmlNode, Statement statement);
 
         public String GetXmlAttributeValue(XmlNode xmlNode, string attributeName)
@@ -22,7 +24,7 @@ namespace SmartSql.Configuration.Tags.TagBuilders
             string strVal = GetXmlAttributeValue(xmlNode, attributeName);
             if (!Decimal.TryParse(strVal, out decimal decimalVal))
             {
-                throw new SmartSqlException();
+                throw new SmartSqlException($"can not convert {strVal} to decimal from xml-node:{xmlNode.Value}.");
             }
             return decimalVal;
         }
@@ -35,6 +37,20 @@ namespace SmartSql.Configuration.Tags.TagBuilders
         {
             return GetXmlAttributeValue(xmlNode, PROPERTY);
         }
+        public bool GetRequired(XmlNode xmlNode)
+        {
+            xmlNode.Attributes.TryGetValueAsBoolean(REQUIRED, out var requiredVal);
+            return requiredVal;
+        }
+        public Int32? GetMin(XmlNode xmlNode)
+        {
+            if (xmlNode.Attributes.TryGetValueAsInt32(MIN, out var requiredVal))
+            {
+                return requiredVal;
+            }
+            return null;
+        }
+
         public String GetCompareValue(XmlNode xmlNode)
         {
             return GetXmlAttributeValue(xmlNode, COMPARE_VALUE);

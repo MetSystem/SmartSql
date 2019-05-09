@@ -6,6 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Reflection.Emit;
 using Microsoft.Extensions.Logging;
+using SmartSql.Annotations;
 using SmartSql.Configuration;
 using SmartSql.DataSource;
 using SmartSql.DyRepository.Annotations;
@@ -17,21 +18,21 @@ namespace SmartSql.DyRepository
 {
     public class EmitRepositoryBuilder : IRepositoryBuilder
     {
-        private ScopeTemplateParser _templateParser;
+        private readonly ScopeTemplateParser _templateParser;
         private AssemblyBuilder _assemblyBuilder;
         private ModuleBuilder _moduleBuilder;
-        private Func<Type, MethodInfo, String> _sqlIdNamingConvert;
+        private readonly Func<Type, MethodInfo, String> _sqlIdNamingConvert;
         private readonly ILogger _logger;
         private readonly StatementAnalyzer _statementAnalyzer;
         public EmitRepositoryBuilder(
-             string scope_template
+             string scopeTemplate
             , Func<Type, MethodInfo, String> sqlIdNamingConvert
             , ILogger logger
             )
         {
             _sqlIdNamingConvert = sqlIdNamingConvert;
             _logger = logger;
-            _templateParser = new ScopeTemplateParser(scope_template);
+            _templateParser = new ScopeTemplateParser(scopeTemplate);
             _statementAnalyzer = new StatementAnalyzer();
             InitAssembly();
         }
@@ -63,12 +64,12 @@ namespace SmartSql.DyRepository
         }
         private void BuildInternalGet(TypeBuilder typeBuilder, MethodInfo methodInfo, FieldBuilder sqlMapperField)
         {
-            var implMehtod = typeBuilder.DefineMethod(methodInfo.Name
+            var implMethod = typeBuilder.DefineMethod(methodInfo.Name
             , MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Virtual | MethodAttributes.Final
             , methodInfo.ReturnType, Type.EmptyTypes);
-            var ilGen = implMehtod.GetILGenerator();
+            var ilGen = implMethod.GetILGenerator();
             ilGen.LoadArg(0);
-            ilGen.FieldSet(sqlMapperField);
+            ilGen.FieldGet(sqlMapperField);
             ilGen.Return();
         }
         private void BuildMethod(Type interfaceType, TypeBuilder typeBuilder, MethodInfo methodInfo, FieldBuilder sqlMapperField, SmartSqlConfig smartSqlConfig, string scope)
@@ -82,7 +83,7 @@ namespace SmartSql.DyRepository
             }
             var returnType = methodInfo.ReturnType;
 
-            var implMehtod = typeBuilder.DefineMethod(methodInfo.Name
+            var implMethod = typeBuilder.DefineMethod(methodInfo.Name
                 , MethodAttributes.Public | MethodAttributes.HideBySig | MethodAttributes.NewSlot | MethodAttributes.Virtual | MethodAttributes.Final
                 , returnType, paramTypes);
 
@@ -92,7 +93,7 @@ namespace SmartSql.DyRepository
             {
                 var genericArgs = methodInfo.GetGenericArguments();
                 var gArgNames = genericArgs.Select(gArg => gArg.Name).ToArray();
-                var defineGenericArgs = implMehtod.DefineGenericParameters(gArgNames);
+                var defineGenericArgs = implMethod.DefineGenericParameters(gArgNames);
                 for (int i = 0; i < gArgNames.Length; i++)
                 {
                     var genericArg = genericArgs[i];
@@ -102,67 +103,76 @@ namespace SmartSql.DyRepository
             }
 
             StatementAttribute statementAttr = PreStatement(interfaceType, scope, methodInfo, returnType, isTaskReturnType, smartSqlConfig);
-            var ilGen = implMehtod.GetILGenerator();
-            ilGen.DeclareLocal(RequestContextType.Type);
-            ilGen.DeclareLocal(SqlParameterType.SqlParameterCollection);
-            if (paramTypes.Length == 1 && paramTypes.First() == RequestContextType.Type)
+            var ilGen = implMethod.GetILGenerator();
+            bool onlyOneParam = paramTypes.Length == 1;
+            Type firstParamType = paramTypes.FirstOrDefault();
+
+            ilGen.DeclareLocal(RequestContextType.AbstractType);
+
+            if (onlyOneParam && RequestContextType.AbstractType.IsAssignableFrom(firstParamType))
             {
-                ilGen.LoadArg(1);
-                ilGen.StoreLocalVar(0);
+                throw new SmartSqlException($"DyRepository.Method ParameterType :{firstParamType.FullName} can not be RequestContext.");
+                //ilGen.LoadArg(1);
+                //ilGen.StoreLocalVar(0);
+            }
+
+            bool isOnlyOneClassParam = onlyOneParam && !IsSimpleParam(firstParamType);
+            EmitNewRequestContext(ilGen, isOnlyOneClassParam, firstParamType);
+            EmitSetCommandType(ilGen, statementAttr);
+            EmitSetDataSourceChoice(ilGen, statementAttr);
+            EmitSetTransaction(ilGen, methodInfo);
+            if (String.IsNullOrEmpty(statementAttr.Sql))
+            {
+                EmitSetScope(ilGen, statementAttr.Scope);
+                EmitSetSqlId(ilGen, statementAttr);
             }
             else
             {
-                EmitNewRequestContext(ilGen);
-                EmitSetCommandType(ilGen, statementAttr);
-                EmitSetDataSourceChoice(ilGen, statementAttr);
-
-                if (String.IsNullOrEmpty(statementAttr.Sql))
+                EmitSetRealSql(ilGen, statementAttr);
+            }
+            if (isOnlyOneClassParam)
+            {
+                ilGen.LoadLocalVar(0);
+                ilGen.LoadArg(1);
+                ilGen.Callvirt(RequestContextType.Method.SetRequest);
+            }
+            else if (paramTypes.Length > 0)
+            {
+                ilGen.DeclareLocal(SqlParameterType.SqlParameterCollection);
+                bool ignoreParameterCase = smartSqlConfig.Settings.IgnoreParameterCase;
+                ilGen.Emit(ignoreParameterCase ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
+                ilGen.New(SqlParameterType.Ctor.SqlParameterCollection);
+                ilGen.StoreLocalVar(1);
+                for (int i = 0; i < methodParams.Length; i++)
                 {
-                    EmitSetScope(ilGen, statementAttr.Scope);
-                    EmitSetSqlId(ilGen, statementAttr);
-                }
-                else
-                {
-                    EmitSetRealSql(ilGen, statementAttr);
-                }
-                if (paramTypes.Length == 1 && !IsSimpleParam(paramTypes.First()))
-                {
-                    ilGen.LoadLocalVar(0);
-                    ilGen.LoadArg(1);
-                    ilGen.Call(RequestContextType.Method.SetRequest);
-                }
-                else if (paramTypes.Length > 0)
-                {
-                    bool ignoreParameterCase = smartSqlConfig.Settings.IgnoreParameterCase;
-                    ilGen.Emit(ignoreParameterCase ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
-                    ilGen.New(SqlParameterType.Ctor.SqlParameterCollection);
-                    ilGen.StoreLocalVar(1);
-                    for (int i = 0; i < methodParams.Length; i++)
+                    int argIndex = i + 1;
+                    var reqParam = methodParams[i];
+                    string reqParamName = reqParam.Name;
+                    var paramAttr = reqParam.GetCustomAttribute<ParamAttribute>();
+                    if (paramAttr != null && !String.IsNullOrEmpty(paramAttr.Name))
                     {
-                        int argIndex = i + 1;
-                        var reqParam = methodParams[i];
-                        string reqParamName = reqParam.Name;
-                        var paramAttr = reqParam.GetCustomAttribute<ParamAttribute>();
-                        if (paramAttr != null && !String.IsNullOrEmpty(paramAttr.Name))
-                        {
-                            reqParamName = paramAttr.Name;
-                        }
-                        ilGen.LoadLocalVar(1);
-                        ilGen.LoadString(reqParamName);
-                        ilGen.LoadArg(argIndex);
-
-                        if (reqParam.ParameterType.IsValueType)
-                        {
-                            ilGen.Box(reqParam.ParameterType);
-                        }
-                        ilGen.LoadType(reqParam.ParameterType);
-                        ilGen.New(SqlParameterType.Ctor.SqlParameter);
-                        ilGen.Call(SqlParameterType.Method.Add);
+                        reqParamName = paramAttr.Name;
                     }
-                    ilGen.LoadLocalVar(0);
                     ilGen.LoadLocalVar(1);
-                    ilGen.Call(RequestContextType.Method.SetRequest);
+                    ilGen.LoadString(reqParamName);
+                    ilGen.LoadArg(argIndex);
+
+                    if (reqParam.ParameterType.IsValueType)
+                    {
+                        ilGen.Box(reqParam.ParameterType);
+                    }
+                    ilGen.LoadType(reqParam.ParameterType);
+                    ilGen.New(SqlParameterType.Ctor.SqlParameter);
+                    ilGen.Dup();
+                    var getHandlerMethod = paramAttr?.FieldType != null ? TypeHandlerCacheType.GetHandlerMethod(reqParam.ParameterType, paramAttr?.FieldType)
+                        : PropertyTypeHandlerCacheType.GetHandlerMethod(reqParam.ParameterType);
+                    ilGen.Call(getHandlerMethod);
+                    ilGen.Call(SqlParameterType.Method.SetTypeHandler);
+                    ilGen.Call(SqlParameterType.Method.Add);
                 }
+                ilGen.LoadLocalVar(0);
+                ilGen.LoadLocalVar(1);
+                ilGen.Callvirt(RequestContextType.Method.SetRequest);
             }
             MethodInfo executeMethod = PreExecuteMethod(statementAttr, returnType, isTaskReturnType);
             ilGen.LoadArg(0);
@@ -189,13 +199,18 @@ namespace SmartSql.DyRepository
             {
                 return false;
             }
+            if (SqlParameterType.SqlParameterCollection == paramType)
+            {
+                return false;
+            }
             if (paramType.IsValueType) { return true; }
             if (paramType == typeof(string)) { return true; }
             if (paramType.IsGenericParameter) { return true; }
+
             return DataType.Enumerable.IsAssignableFrom(paramType);
         }
         #region Pre
-        private string PreScoe(Type interfaceType, string scope = "")
+        private string PreScope(Type interfaceType, string scope = "")
         {
             var sqlmapAttr = interfaceType.GetCustomAttribute<SqlMapAttribute>();
             if (sqlmapAttr != null && !string.IsNullOrEmpty(sqlmapAttr.Scope))
@@ -257,7 +272,11 @@ namespace SmartSql.DyRepository
                     statementType = _statementAnalyzer.Analyse(statementAttr.Sql);
                 }
 
-                if (returnType == CommonType.Int32 || returnType == CommonType.Void || returnType == null)
+                if (CommonType.IsValueTuple(returnType))
+                {
+                    statementAttr.Execute = ExecuteBehavior.QuerySingle;
+                }
+                else if (returnType == CommonType.Int32 || returnType == CommonType.Void || returnType == null)
                 {
                     statementAttr.Execute = ExecuteBehavior.Execute;
                     if (returnType == CommonType.Int32)
@@ -372,16 +391,21 @@ namespace SmartSql.DyRepository
         }
         #endregion
         #region Emit Set RequestContext
-        private void EmitNewRequestContext(ILGenerator ilGen)
+        private void EmitNewRequestContext(ILGenerator ilGen, bool isOnlyOneClassParam, Type onlyOneParamType)
         {
-            ilGen.New(RequestContextType.Ctor);
+            var requestCtor = RequestContextType.Ctor;
+            if (isOnlyOneClassParam)
+            {
+                requestCtor = RequestContextType.MakeGenericTypeCtor(onlyOneParamType);
+            }
+            ilGen.New(requestCtor);
             ilGen.StoreLocalVar(0);
         }
         private void EmitSetScope(ILGenerator ilGen, string scope)
         {
             ilGen.LoadLocalVar(0);
             ilGen.LoadString(scope);
-            ilGen.Call(RequestContextType.Method.SetScope);
+            ilGen.Callvirt(RequestContextType.Method.SetScope);
         }
         private static void EmitSetCommandType(ILGenerator ilGen, StatementAttribute statementAttr)
         {
@@ -389,7 +413,7 @@ namespace SmartSql.DyRepository
             {
                 ilGen.LoadLocalVar(0);
                 ilGen.LoadInt32(statementAttr.CommandType.GetHashCode());
-                ilGen.Call(RequestContextType.Method.SetCommandType);
+                ilGen.Callvirt(RequestContextType.Method.SetCommandType);
             }
         }
         private static void EmitSetDataSourceChoice(ILGenerator ilGen, StatementAttribute statementAttr)
@@ -398,31 +422,66 @@ namespace SmartSql.DyRepository
             {
                 ilGen.LoadLocalVar(0);
                 ilGen.LoadInt32(statementAttr.SourceChoice.GetHashCode());
-                ilGen.Call(RequestContextType.Method.SetDataSourceChoice);
+                ilGen.Callvirt(RequestContextType.Method.SetDataSourceChoice);
+            }
+        }
+        private void EmitSetTransaction(ILGenerator ilGen, MethodInfo methodInfo)
+        {
+            IsolationLevel? isolationLevel = null;
+            foreach (var attributeData in methodInfo.GetCustomAttributesData())
+            {
+                var attrType = attributeData.AttributeType;
+                if (attrType == typeof(UseTransactionAttribute))
+                {
+                    var transactionAttribute = methodInfo.GetCustomAttribute<UseTransactionAttribute>();
+                    isolationLevel = transactionAttribute.Level;
+                    break;
+                }
+
+                #region  Warning:: SmartSql.AOP.TransactionAttribute , Suggested use UseTransactionAttribute
+                if (attrType.FullName == "SmartSql.AOP.TransactionAttribute")
+                {
+                    _logger.LogWarning($"RepositoryBuilder.BuildMethod:{methodInfo.Name} Used:[{attrType.FullName}] ,Suggested use:[{typeof(UseTransactionAttribute).FullName}] For DyRepository interface.");
+                    var transactionAttribute = methodInfo.GetCustomAttribute(attrType);
+                    var transactionLevel = attrType.GetProperty("Level")?.GetValue(transactionAttribute);
+                    if (transactionLevel != null)
+                    {
+                        isolationLevel = (IsolationLevel)transactionLevel;
+                    }
+                    break;
+                }
+                #endregion
+            }
+            if (isolationLevel.HasValue)
+            {
+                ilGen.LoadLocalVar(0);
+                ilGen.LoadInt32(isolationLevel.GetHashCode());
+                ilGen.New(NullableType<IsolationLevel>.Ctor);
+                ilGen.Callvirt(RequestContextType.Method.SetTransaction);
             }
         }
         private void EmitSetRealSql(ILGenerator ilGen, StatementAttribute statementAttr)
         {
             ilGen.LoadLocalVar(0);
             ilGen.LoadString(statementAttr.Sql);
-            ilGen.Call(RequestContextType.Method.SetRealSql);
+            ilGen.Callvirt(RequestContextType.Method.SetRealSql);
         }
         private void EmitSetSqlId(ILGenerator ilGen, StatementAttribute statementAttr)
         {
             ilGen.LoadLocalVar(0);
             ilGen.LoadString(statementAttr.Id);
-            ilGen.Call(RequestContextType.Method.SetSqlId);
+            ilGen.Callvirt(RequestContextType.Method.SetSqlId);
         }
 
         #endregion
         public Type Build(Type interfaceType, SmartSqlConfig smartSqlConfig, string scope = "")
         {
-            string implName = $"{interfaceType.Name.TrimStart('I')}_Impl_{Guid.NewGuid().ToString("N")}";
+            string implName = $"{interfaceType.Name.TrimStart('I')}_Impl_{Guid.NewGuid():N}";
             var typeBuilder = _moduleBuilder.DefineType(implName, TypeAttributes.Public);
             typeBuilder.AddInterfaceImplementation(interfaceType);
             var sqlMapperField = typeBuilder.DefineField("sqlMapper", ISqlMapperType.Type, FieldAttributes.Family);
             var scopeField = typeBuilder.DefineField("scope", CommonType.String, FieldAttributes.Family);
-            scope = PreScoe(interfaceType, scope);
+            scope = PreScope(interfaceType, scope);
             EmitBuildCtor(scope, typeBuilder, sqlMapperField, scopeField);
             var interfaceMethods = new List<MethodInfo>();
 

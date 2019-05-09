@@ -42,14 +42,18 @@ namespace SmartSql.Cache.Default
         {
             lock (this)
             {
+                if (_cache.ContainsKey(cacheKey))
+                {
+                    return false;
+                }
+                _cache.Add(cacheKey, cacheItem);
+                _cacheKeys.Add(cacheKey);
                 if (_cacheKeys.Count > _cacheSize)
                 {
                     var removedKey = _cacheKeys[0];
                     _cacheKeys.RemoveAt(0);
                     _cache.Remove(removedKey);
                 }
-                _cache.Add(cacheKey, cacheItem);
-                _cacheKeys.Add(cacheKey);
             }
             return true;
         }
@@ -60,8 +64,15 @@ namespace SmartSql.Cache.Default
             lock (this)
             {
                 cached = _cacheKeys.Remove(cacheKey);
-                _cacheKeys.Add(cacheKey);
-                cacheItem = cached ? _cache[cacheKey] : default;
+                if (cached)
+                {
+                    _cacheKeys.Add(cacheKey);
+                    cacheItem = _cache[cacheKey];
+                }
+                else
+                {
+                    cacheItem = default;
+                }
             }
             return cached;
         }

@@ -7,19 +7,12 @@ namespace SmartSql.Configuration.Tags
 {
     public class IsNotEqual : StringCompareTag
     {
-        public override bool IsCondition(RequestContext context)
+        public override bool IsCondition(AbstractRequestContext context)
         {
-            Object reqVal = GetPropertyValue(context);
+            Object reqVal = EnsurePropertyValue(context);
             if (reqVal == null) { return false; }
-            string reqValStr = string.Empty;
-            if (reqVal is Enum)
-            {
-                reqValStr = Convert.ToInt64(reqVal).ToString();
-            }
-            else
-            {
-                reqValStr = reqVal.ToString();
-            }
+
+            var reqValStr = reqVal is Enum ? Convert.ToInt64(reqVal).ToString() : reqVal.ToString();
             return !reqValStr.Equals(CompareValue);
         }
     }

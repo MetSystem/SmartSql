@@ -4,13 +4,13 @@ using System.Data;
 
 namespace SmartSql.TypeHandlers
 {
-    public class NullableEnumTypeHandler<TEnum> : AbstractNullableTypeHandler<TEnum>
+    public class NullableEnumTypeHandler<TEnum> : AbstractNullableTypeHandler<TEnum, AnyFieldType>
     {
         private readonly Type _enumType;
         private readonly Type _enumUnderlyingType;
         public NullableEnumTypeHandler()
         {
-            _enumType = Nullable.GetUnderlyingType(MappedType);
+            _enumType = Nullable.GetUnderlyingType(PropertyType);
             _enumUnderlyingType = Enum.GetUnderlyingType(_enumType);
         }
 

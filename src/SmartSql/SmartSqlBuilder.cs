@@ -3,29 +3,40 @@ using Microsoft.Extensions.Logging.Abstractions;
 using SmartSql.Cache;
 using SmartSql.ConfigBuilder;
 using SmartSql.Configuration;
-using SmartSql.Configuration.Tags;
 using SmartSql.DataSource;
 using SmartSql.DbSession;
-using SmartSql.Deserializer;
 using SmartSql.Exceptions;
 using SmartSql.Middlewares;
-using SmartSql.Reflection.ObjectFactoryBuilder;
-using SmartSql.TypeHandlers;
 using SmartSql.Utils;
 using System;
+using System.Collections.Generic;
+using System.Linq;
+using SmartSql.Deserializer;
+using SmartSql.TypeHandlers;
 
 namespace SmartSql
 {
-    public class SmartSqlBuilder
+    public class SmartSqlBuilder : IDisposable
     {
+        /// <summary>
+        /// 默认 SmartSql 实例别名
+        /// </summary>
+        public const string DEFAULT_ALIAS = "SmartSql";
         /// <summary>
         /// 默认 XML 配置文件地址
         /// </summary>
         public const string DEFAULT_SMARTSQL_CONFIG_PATH = "SmartSqlMapConfig.xml";
+        public string Alias { get; private set; } = DEFAULT_ALIAS;
+        public ILoggerFactory LoggerFactory { get; private set; } = NullLoggerFactory.Instance;
+        public IConfigBuilder ConfigBuilder { get; private set; }
+
         public SmartSqlConfig SmartSqlConfig { get; private set; }
         public IDbSessionFactory DbSessionFactory { get; private set; }
         public ISqlMapper SqlMapper { get; private set; }
         public bool Built { get; private set; }
+        public bool Registered { get; private set; } = true;
+        private readonly IList<IDataReaderDeserializer> _dataReaderDeserializers = new List<IDataReaderDeserializer>();
+
         public SmartSqlBuilder Build()
         {
             if (Built) return this;
@@ -33,9 +44,26 @@ namespace SmartSql
             BeforeBuildInitService();
             DbSessionFactory = SmartSqlConfig.DbSessionFactory;
             SqlMapper = new SqlMapper(SmartSqlConfig);
-            SmartSqlContainer.Instance.TryRegister(SmartSqlConfig.Alias, this);
+            if (Registered)
+            {
+                SmartSqlContainer.Instance.Register(this);
+            }
+            NamedTypeHandlerCache.Build(Alias, SmartSqlConfig.TypeHandlerFactory.GetNamedTypeHandlers());
+            SetupSmartSql();
             return this;
         }
+
+        private void SetupSmartSql()
+        {
+            foreach (var idGen in SmartSqlConfig.IdGenerators.Values)
+            {
+                if (idGen is ISetupSmartSql setupSmartSql)
+                {
+                    setupSmartSql.SetupSmartSql(this);
+                }
+            }
+        }
+
         public IDbSessionFactory GetDbSessionFactory()
         {
             return DbSessionFactory;
@@ -47,48 +75,37 @@ namespace SmartSql
 
         private void BeforeBuildInitService()
         {
-            if (SmartSqlConfig.LoggerFactory == null)
+            SmartSqlConfig = ConfigBuilder.Build(_importProperties);
+            SmartSqlConfig.Alias = Alias;
+            SmartSqlConfig.LoggerFactory = LoggerFactory;
+            SmartSqlConfig.DataSourceFilter = _dataSourceFilter ?? new DataSourceFilter(SmartSqlConfig.LoggerFactory);
+            if (_isCacheEnabled.HasValue)
             {
-                SmartSqlConfig.LoggerFactory = NullLoggerFactory.Instance;
+                SmartSqlConfig.Settings.IsCacheEnabled = _isCacheEnabled.Value;
             }
-            if (SmartSqlConfig.ObjectFactoryBuilder == null)
-            {
-                SmartSqlConfig.ObjectFactoryBuilder = new ExpressionObjectFactoryBuilder();
-            }
-            if (SmartSqlConfig.TagBuilderFactory == null)
-            {
-                SmartSqlConfig.TagBuilderFactory = new TagBuilderFactory();
-            }
-            if (SmartSqlConfig.TypeHandlerFactory == null)
-            {
-                SmartSqlConfig.TypeHandlerFactory = new TypeHandlerFactory();
-            }
-            if (SmartSqlConfig.DeserializerFactory == null)
-            {
-                SmartSqlConfig.DeserializerFactory = new DeserializerFactory();
-            }
-            if (SmartSqlConfig.DbSessionFactory == null)
-            {
-                SmartSqlConfig.DbSessionFactory = new DbSessionFactory(SmartSqlConfig);
-            }
-            if (SmartSqlConfig.SessionStore == null)
-            {
-                SmartSqlConfig.SessionStore = new DbSessionStore(SmartSqlConfig.DbSessionFactory);
-            }
-            if (SmartSqlConfig.DataSourceFilter == null)
-            {
-                SmartSqlConfig.DataSourceFilter = new DataSourceFilter();
-            }
-            if (SmartSqlConfig.StatementAnalyzer == null)
-            {
-                SmartSqlConfig.StatementAnalyzer = new StatementAnalyzer();
-            }
-            if (SmartSqlConfig.SqlParamAnalyzer == null)
-            {
-                SmartSqlConfig.SqlParamAnalyzer = new SqlParamAnalyzer(SmartSqlConfig.Settings.IgnoreParameterCase, SmartSqlConfig.Database.DbProvider.ParameterPrefix);
-            }
+            SmartSqlConfig.SqlParamAnalyzer = new SqlParamAnalyzer(SmartSqlConfig.Settings.IgnoreParameterCase, SmartSqlConfig.Database.DbProvider.ParameterPrefix);
+            InitDeserializerFactory();
             BuildPipeline();
         }
+
+        private void InitDeserializerFactory()
+        {
+            IDataReaderDeserializer deser = new MultipleResultDeserializer(SmartSqlConfig.DeserializerFactory);
+            SmartSqlConfig.DeserializerFactory.Add(deser);
+            deser = new ValueTupleDeserializer(SmartSqlConfig.DeserializerFactory);
+            SmartSqlConfig.DeserializerFactory.Add(deser);
+            deser = new ValueTypeDeserializer();
+            SmartSqlConfig.DeserializerFactory.Add(deser);
+            deser = new DynamicDeserializer();
+            SmartSqlConfig.DeserializerFactory.Add(deser);
+            foreach (var deserializer in _dataReaderDeserializers)
+            {
+                SmartSqlConfig.DeserializerFactory.Add(deserializer);
+            }
+        }
+
+        private bool UsedCache => SmartSqlConfig.Settings.IsCacheEnabled
+                                  && SmartSqlConfig.SqlMaps.Values.Any(sqlMap => sqlMap.Caches.Count > 0);
 
         private void BuildPipeline()
         {
@@ -96,15 +113,16 @@ namespace SmartSql
             {
                 return;
             }
-            if (SmartSqlConfig.Settings.IsCacheEnabled)
+            if (UsedCache)
             {
                 SmartSqlConfig.CacheManager = new CacheManager(SmartSqlConfig);
                 SmartSqlConfig.Pipeline = new PipelineBuilder()
                      .Add(new InitializerMiddleware(SmartSqlConfig))
+                     .Add(new TransactionMiddleware())
                      .Add(new PrepareStatementMiddleware(SmartSqlConfig))
                      .Add(new CachingMiddleware(SmartSqlConfig))
                      .Add(new DataSourceFilterMiddleware(SmartSqlConfig))
-                     .Add(new CommandExecuterMiddleware())
+                     .Add(new CommandExecuterMiddleware(SmartSqlConfig))
                      .Add(new ResultHandlerMiddleware(SmartSqlConfig)).Build();
             }
             else
@@ -112,86 +130,96 @@ namespace SmartSql
                 SmartSqlConfig.CacheManager = new NoneCacheManager();
                 SmartSqlConfig.Pipeline = new PipelineBuilder()
                      .Add(new InitializerMiddleware(SmartSqlConfig))
+                     .Add(new TransactionMiddleware())
                      .Add(new PrepareStatementMiddleware(SmartSqlConfig))
                      .Add(new DataSourceFilterMiddleware(SmartSqlConfig))
-                     .Add(new CommandExecuterMiddleware())
+                     .Add(new CommandExecuterMiddleware(SmartSqlConfig))
                      .Add(new ResultHandlerMiddleware(SmartSqlConfig)).Build();
             }
         }
 
         #region Instance
 
-        public SmartSqlBuilder UseLoggerFactory(ILoggerFactory loggerFactory)
+        private IDataSourceFilter _dataSourceFilter;
+        private bool? _isCacheEnabled;
+        private IEnumerable<KeyValuePair<string, string>> _importProperties;
+        public SmartSqlBuilder RegisterToContainer(bool registered = true)
         {
-            SmartSqlConfig.LoggerFactory = loggerFactory; return this;
+            Registered = registered; return this;
         }
-        public SmartSqlBuilder UseObjectFactoryBuilder(IObjectFactoryBuilder objectFactoryBuilder)
+
+        public SmartSqlBuilder AddDeserializer(IDataReaderDeserializer deserializer)
         {
-            SmartSqlConfig.ObjectFactoryBuilder = objectFactoryBuilder; return this;
+            _dataReaderDeserializers.Add(deserializer); return this;
         }
-        public SmartSqlBuilder UseTagBuilderFactory(ITagBuilderFactory tagBuilderFactory)
-        {
-            SmartSqlConfig.TagBuilderFactory = tagBuilderFactory; return this;
-        }
-        public SmartSqlBuilder UseDeserializerFactory(IDeserializerFactory deserializerFactory)
-        {
-            SmartSqlConfig.DeserializerFactory = deserializerFactory; return this;
-        }
-        public SmartSqlBuilder UseDbSessionFactory(IDbSessionFactory dbSessionFactory)
-        {
-            SmartSqlConfig.DbSessionFactory = dbSessionFactory; return this;
-        }
-        public SmartSqlBuilder UseSessionStore(IDbSessionStore sessionStore)
-        {
-            SmartSqlConfig.SessionStore = sessionStore; return this;
-        }
+
         public SmartSqlBuilder UseDataSourceFilter(IDataSourceFilter dataSourceFilter)
         {
-            SmartSqlConfig.DataSourceFilter = dataSourceFilter; return this;
+            _dataSourceFilter = dataSourceFilter; return this;
         }
         public SmartSqlBuilder UseCache(bool isCacheEnabled = true)
         {
-            SmartSqlConfig.Settings.IsCacheEnabled = isCacheEnabled; return this;
+            _isCacheEnabled = isCacheEnabled; return this;
         }
         public SmartSqlBuilder UseAlias(String alias)
         {
-            SmartSqlConfig.Alias = alias; return this;
+            if (String.IsNullOrEmpty(alias))
+            {
+                throw new ArgumentNullException(nameof(alias));
+            }
+            Alias = alias;
+            return this;
         }
-        #endregion
-
-        #region Static Config
+        public SmartSqlBuilder UseProperties(IEnumerable<KeyValuePair<string, string>> importProperties)
+        {
+            _importProperties = importProperties; return this;
+        }
+        public SmartSqlBuilder UseLoggerFactory(ILoggerFactory loggerFactory)
+        {
+            if (loggerFactory != null)
+            {
+                LoggerFactory = loggerFactory;
+            }
+            return this;
+        }
+        public SmartSqlBuilder UseConfigBuilder(IConfigBuilder configBuilder)
+        {
+            ConfigBuilder = configBuilder;
+            return this;
+        }
         /// <summary>
         /// SmartSqlMapConfig 配置方式构建
         /// </summary>
         /// <param name="smartSqlConfig"></param>
         /// <returns></returns>
-        public static SmartSqlBuilder AddConfig(SmartSqlConfig smartSqlConfig)
+        public SmartSqlBuilder UseNativeConfig(SmartSqlConfig smartSqlConfig)
         {
             if (smartSqlConfig == null)
             {
                 throw new ArgumentNullException(nameof(smartSqlConfig));
             }
-            return new SmartSqlBuilder
-            {
-                SmartSqlConfig = smartSqlConfig
-            };
+            ConfigBuilder = new NativeConfigBuilder(smartSqlConfig);
+            return this;
         }
+
         /// <summary>
         /// Xml 配置方式构建
         /// </summary>
+        /// <param name="resourceType"></param>
         /// <param name="smartSqlMapConfig"></param>
         /// <returns></returns>
-        public static SmartSqlBuilder AddXmlConfig(ResourceType resourceType = ResourceType.File, String smartSqlMapConfig = DEFAULT_SMARTSQL_CONFIG_PATH)
+        public SmartSqlBuilder UseXmlConfig(ResourceType resourceType = ResourceType.File
+            , String smartSqlMapConfig = DEFAULT_SMARTSQL_CONFIG_PATH)
         {
-            var smartSqlConfig = new XmlConfigBuilder(resourceType, smartSqlMapConfig).Build();
-            return AddConfig(smartSqlConfig);
+            ConfigBuilder = new XmlConfigBuilder(resourceType, smartSqlMapConfig, LoggerFactory);
+            return this;
         }
         /// <summary>
         /// 数据源方式构建
         /// </summary>
         /// <param name="writeDataSource"></param>
         /// <returns></returns>
-        public static SmartSqlBuilder AddDataSource(WriteDataSource writeDataSource)
+        public SmartSqlBuilder UseDataSource(WriteDataSource writeDataSource)
         {
             if (writeDataSource == null)
             {
@@ -205,10 +233,10 @@ namespace SmartSql
                     Write = writeDataSource
                 }
             };
-            return AddConfig(smartSqlConfig);
+            return UseNativeConfig(smartSqlConfig);
         }
 
-        public static SmartSqlBuilder AddDataSource(String dbProviderName, String connectionString)
+        public SmartSqlBuilder UseDataSource(String dbProviderName, String connectionString)
         {
             if (string.IsNullOrEmpty(dbProviderName))
             {
@@ -229,7 +257,13 @@ namespace SmartSql
                 ConnectionString = connectionString,
                 DbProvider = dbProvider
             };
-            return AddDataSource(writeDataSource);
+            return UseDataSource(writeDataSource);
+        }
+
+        public void Dispose()
+        {
+            SmartSqlConfig.SessionStore.Dispose();
+            SmartSqlConfig.CacheManager.Dispose();
         }
         #endregion
     }

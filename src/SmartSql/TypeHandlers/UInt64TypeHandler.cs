@@ -6,11 +6,11 @@ using System.Text;
 
 namespace SmartSql.TypeHandlers
 {
-    public class UInt64TypeHandler : AbstractTypeHandler<UInt64>
+    public class UInt64TypeHandler : AbstractTypeHandler<UInt64, AnyFieldType>
     {
-        public override UInt64 GetValue(DataReaderWrapper dataReader, int columnIndex)
+        public override UInt64 GetValue(DataReaderWrapper dataReader, int columnIndex, Type targetType)
         {
-            return dataReader.GetFieldValue<UInt64>(columnIndex);
+            return Convert.ToUInt64(dataReader.GetValue(columnIndex));
         }
     }
 }

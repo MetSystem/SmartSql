@@ -1,75 +1,39 @@
 ﻿using System;
-using System.IO;
+using System.Collections.Generic;
 using System.Linq;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using System.Text;
 using SmartSql;
-using SmartSql.Configuration;
 using SmartSql.DbSession;
+using SmartSql.Exceptions;
 
 namespace Microsoft.Extensions.DependencyInjection
 {
     public static class SmartSqlExtensions
     {
-        public static IServiceCollection AddSmartSql(this IServiceCollection services, String alias = SmartSqlConfig.DEFAULT_ALIAS)
+        public static SmartSqlBuilder GetSmartSql(this IServiceProvider sp, string alias = SmartSqlBuilder.DEFAULT_ALIAS)
         {
-            services.AddSingleton<SmartSqlBuilder>(sp =>
-            {
-                var configPath = ResolveConfigPath(sp);
-                return SmartSqlBuilder.AddXmlConfig(SmartSql.ConfigBuilder.ResourceType.File, configPath)
-                 .UseAlias(alias)
-                 .UseLoggerFactory(sp.GetService<ILoggerFactory>())
-                 .Build();
-            });
-            AddOthers(services);
-            return services;
+            return sp.GetServices<SmartSqlBuilder>().FirstOrDefault(m => m.Alias == alias);
         }
-
-        private static string ResolveConfigPath(IServiceProvider sp)
+        public static SmartSqlBuilder EnsureSmartSql(this IServiceProvider sp, string alias = SmartSqlBuilder.DEFAULT_ALIAS)
         {
-            var env = sp.GetService<IHostingEnvironment>();
-            var configPath = SmartSqlBuilder.DEFAULT_SMARTSQL_CONFIG_PATH;
-            if (env != null && !env.IsProduction())
+            var smartsqlBuilder = sp.GetSmartSql(alias);
+            if (smartsqlBuilder == null)
             {
-                configPath = $"SmartSqlMapConfig.{env.EnvironmentName}.xml";
+                throw new SmartSqlException($"Can not find SmartSql.Alias:{alias} instance.");
             }
-            if (!File.Exists(configPath))
-            {
-                configPath = SmartSqlBuilder.DEFAULT_SMARTSQL_CONFIG_PATH;
-            }
-            return configPath;
+            return smartsqlBuilder;
         }
-
-        private static void AddOthers(IServiceCollection services)
+        public static IDbSessionFactory GetSessionFactory(this IServiceProvider sp, string alias = SmartSqlBuilder.DEFAULT_ALIAS)
         {
-            services.AddSingleton<IDbSessionFactory>(sp => sp.GetRequiredService<SmartSqlBuilder>().DbSessionFactory);
-            services.AddSingleton<ISqlMapper>(sp => sp.GetRequiredService<SmartSqlBuilder>().SqlMapper);
-            services.AddSingleton<ITransaction>(sp => sp.GetRequiredService<SmartSqlBuilder>().SqlMapper);
+            return sp.GetSmartSql(alias)?.DbSessionFactory;
         }
-
-        public static IServiceCollection AddSmartSql(this IServiceCollection services, Func<IServiceProvider, SmartSqlBuilder> setup)
+        public static ISqlMapper GetSqlMapper(this IServiceProvider sp, string alias = SmartSqlBuilder.DEFAULT_ALIAS)
         {
-            services.AddSingleton<SmartSqlBuilder>(sp => setup(sp).Build());
-            AddOthers(services);
-            return services;
+            return sp.GetSmartSql(alias)?.SqlMapper;
         }
-        public static IServiceCollection AddSmartSql(this IServiceCollection services, Action<IServiceProvider, SmartSqlBuilder> setup)
+        public static IDbSessionStore GetSessionStore(this IServiceProvider sp, string alias = SmartSqlBuilder.DEFAULT_ALIAS)
         {
-            services.AddSingleton<SmartSqlBuilder>(sp =>
-            {
-                var configPath = ResolveConfigPath(sp);
-                var smartSqlBuilder = SmartSqlBuilder.AddXmlConfig(SmartSql.ConfigBuilder.ResourceType.File, configPath)
-                 .UseLoggerFactory(sp.GetService<ILoggerFactory>());
-                setup(sp, smartSqlBuilder);
-                return smartSqlBuilder.Build();
-            });
-            AddOthers(services);
-            return services;
-        }
-        public static SmartSqlBuilder GetSmartSql(this IServiceProvider sp, string alias = SmartSqlConfig.DEFAULT_ALIAS)
-        {
-            return sp.GetServices<SmartSqlBuilder>().FirstOrDefault(m => m.SmartSqlConfig.Alias == alias);
+            return sp.GetSmartSql(alias)?.SmartSqlConfig.SessionStore;
         }
     }
 }

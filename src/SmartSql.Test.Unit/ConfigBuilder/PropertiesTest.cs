@@ -12,22 +12,72 @@ namespace SmartSql.Test.Unit.ConfigBuilder
         public void GetPropertyValueWithName()
         {
             Properties properties = new Properties();
-            properties.Load(new Dictionary<string, string> {
-                { "Goodjob","Yes"}
+            properties.Import(new Dictionary<string, string> {
+                { "SmartSql","Great"}
             });
-            var propVal = properties.GetPropertyValue("${Goodjob}-yes");
-            Assert.Equal("Yes-yes", propVal);
+            var propVal = properties.GetPropertyValue("${SmartSql}-Great");
+            Assert.Equal("Great-Great", propVal);
         }
 
         [Fact]
         public void GetPropertyValue()
         {
             Properties properties = new Properties();
-            properties.Load(new Dictionary<string, string> {
-                { "Goodjob","Yes"}
+            properties.Import(new Dictionary<string, string> {
+                { "SmartSql","Great"}
             });
-            var propVal = properties.GetPropertyValue("goodjob-yes");
-            Assert.Equal("goodjob-yes", propVal);
+            var propVal = properties.GetPropertyValue("${SmartSql}");
+            Assert.Equal("Great", propVal);
+        }
+        [Fact]
+        public void GetColonPropertyValue()
+        {
+            Properties properties = new Properties();
+            properties.Import(new Dictionary<string, string> {
+                { "SmartSql:Great","Yes"}
+            });
+            var propVal = properties.GetPropertyValue("${SmartSql:Great}");
+            Assert.Equal("Yes", propVal);
+        }
+        [Fact]
+        public void GetBackQuotePropertyValue()
+        {
+            Properties properties = new Properties();
+            properties.Import(new Dictionary<string, string> {
+                { "SmartSql`Great","Yes"}
+            });
+            var propVal = properties.GetPropertyValue("${SmartSql`Great}");
+            Assert.Equal("Yes", propVal);
+        }
+        [Fact]
+        public void GetNumPropertyValue()
+        {
+            Properties properties = new Properties();
+            properties.Import(new Dictionary<string, string> {
+                { "SmartSql888","Yes"}
+            });
+            var propVal = properties.GetPropertyValue("${SmartSql888}");
+            Assert.Equal("Yes", propVal);
+        }
+        [Fact]
+        public void GetDotPropertyValue()
+        {
+            Properties properties = new Properties();
+            properties.Import(new Dictionary<string, string> {
+                { "SmartSql.888","Yes"}
+            });
+            var propVal = properties.GetPropertyValue("${SmartSql.888}");
+            Assert.Equal("Yes", propVal);
+        }
+        [Fact]
+        public void GetBlankPropertyValue()
+        {
+            Properties properties = new Properties();
+            properties.Import(new Dictionary<string, string> {
+                { "SmartSql 888","Yes"}
+            });
+            var propVal = properties.GetPropertyValue("${SmartSql 888}");
+            Assert.Equal("Yes", propVal);
         }
     }
 }

@@ -1,145 +1,314 @@
 ﻿using System;
-using System.Collections.Concurrent;
+using System.Collections.Generic;
 using SmartSql.Configuration;
 using SmartSql.Exceptions;
 using SmartSql.Reflection.TypeConstants;
 
 namespace SmartSql.TypeHandlers
 {
-    public class TypeHandlerFactory : ITypeHandlerFactory
+    public class TypeHandlerFactory
     {
-        private readonly static Type ENUM_TYPE_HANDLER_TYPE = typeof(EnumTypeHandler<>);
-        private readonly static Type NULLABLE_ENUM_TYPE_HANDLER_TYPE = typeof(NullableEnumTypeHandler<>);
-
-        private readonly ConcurrentDictionary<Type, ITypeHandler> _type_Handler_Map = new ConcurrentDictionary<Type, ITypeHandler>();
-        private readonly ConcurrentDictionary<String, ITypeHandler> _name_Handler_Map = new ConcurrentDictionary<String, ITypeHandler>();
+        private static readonly Type ENUM_TYPE_HANDLER_TYPE = typeof(EnumTypeHandler<>);
+        private static readonly Type NULLABLE_ENUM_TYPE_HANDLER_TYPE = typeof(NullableEnumTypeHandler<>);
+        private static readonly UnknownTypeHandler UNKNOWN_TYPE_HANDLER = new UnknownTypeHandler();
+        private readonly Dictionary<string, ITypeHandler> _nameHandlerMap = new Dictionary<string, ITypeHandler>();
 
         private readonly ITypeHandlerBuilder _typeHandlerBuilder = new TypeHandlerBuilder();
+
+        private readonly Dictionary<Type, IDictionary<Type, ITypeHandler>> _typeHandlerMap =
+            new Dictionary<Type, IDictionary<Type, ITypeHandler>>();
+
         public TypeHandlerFactory()
         {
-            #region Init Type_Handler_Map
             ITypeHandler handler = null;
 
+            #region Boolean
+
             handler = new BooleanTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new BooleanCharTypeHandler();
+            Register(handler);
+            handler = new BooleanStringTypeHandler();
+            Register(handler);
+            handler = new BooleanAnyTypeHandler();
+            Register(handler);
             handler = new NullableBooleanTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new NullableBooleanCharTypeHandler();
+            Register(handler);
+            handler = new NullableBooleanStringTypeHandler();
+            Register(handler);
+            handler = new NullableBooleanAnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region Byte
 
             handler = new ByteTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new ByteAnyTypeHandler();
+            Register(handler);
             handler = new NullableByteTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new NullableByteAnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region Char
 
             handler = new CharTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new CharAnyTypeHandler();
+            Register(handler);
             handler = new NullableCharTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new NullableCharAnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region DateTime
 
             handler = new DateTimeTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new DateTimeStringTypeHandler();
+            Register(handler);
+            handler = new DateTimeAnyTypeHandler();
+            Register(handler);
             handler = new NullableDateTimeTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new NullableDateTimeStringTypeHandler();
+            Register(handler);
+            handler = new NullableDateTimeAnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region Decimal
 
             handler = new DecimalTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new DecimalAnyTypeHandler();
+            Register(handler);
             handler = new NullableDecimalTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new NullableDecimalAnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region Double
 
             handler = new DoubleTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new DoubleAnyTypeHandler();
+            Register(handler);
             handler = new NullableDoubleTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new NullableDoubleAnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region Int16
 
             handler = new Int16TypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new Int16ByteTypeHandler();
+            Register(handler);
+            handler = new Int16AnyTypeHandler();
+            Register(handler);
             handler = new NullableInt16TypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new NullableInt16AnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region Int32
 
             handler = new Int32TypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new Int32ByteTypeHandler();
+            Register(handler);
+            handler = new Int32Int16TypeHandler();
+            Register(handler);
+            handler = new Int32Int64TypeHandler();
+            Register(handler);
+            handler = new Int32AnyTypeHandler();
+            Register(handler);
             handler = new NullableInt32TypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new NullableInt32AnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region Int64
 
             handler = new Int64TypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new Int64ByteTypeHandler();
+            Register(handler);
+            handler = new Int64Int16TypeHandler();
+            Register(handler);
+            handler = new Int64Int32TypeHandler();
+            Register(handler);
+            handler = new Int64AnyTypeHandler();
+            Register(handler);
             handler = new NullableInt64TypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new NullableInt64AnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region Single
 
             handler = new SingleTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new SingleAnyTypeHandler();
+            Register(handler);
             handler = new NullableSingleTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new NullableSingleAnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region String
 
             handler = new StringTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new StringAnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region Guid
 
             handler = new GuidTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new GuidAnyTypeHandler();
+            Register(handler);
             handler = new NullableGuidTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new NullableGuidAnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region TimeSpan
 
             handler = new TimeSpanTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new TimeSpanAnyTypeHandler();
+            Register(handler);
             handler = new NullableTimeSpanTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new NullableTimeSpanAnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region ByteArray
 
             handler = new ByteArrayTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new ByteArrayAnyTypeHandler();
+            Register(handler);
+
+            #endregion
+
+            #region CharArray
 
             handler = new CharArrayTypeHandler();
-            this.Register(handler);
+            Register(handler);
+            handler = new CharArrayAnyTypeHandler();
+            Register(handler);
 
-            handler = new ObjectTypeHandler();
-            this.Register(handler);
+            #endregion
+
+            #region UInt16
 
             handler = new UInt16TypeHandler();
-            this.Register(handler);
+            Register(handler);
             handler = new NullableUInt16TypeHandler();
-            this.Register(handler);
+            Register(handler);
+
+            #endregion
+
+            #region UInt32
 
             handler = new UInt32TypeHandler();
-            this.Register(handler);
+            Register(handler);
             handler = new NullableUInt32TypeHandler();
-            this.Register(handler);
+            Register(handler);
+
+            #endregion
+
+            #region UInt64
 
             handler = new UInt64TypeHandler();
-            this.Register(handler);
+            Register(handler);
             handler = new NullableUInt64TypeHandler();
-            this.Register(handler);
+            Register(handler);
+
+            #endregion
+
+            #region SByte
 
             handler = new SByteTypeHandler();
-            this.Register(handler);
+            Register(handler);
             handler = new NullableSByteTypeHandler();
-            this.Register(handler);
+            Register(handler);
+
+            #endregion
+
+            #region Unknown
+
+            Register(UNKNOWN_TYPE_HANDLER);
+
             #endregion
         }
-        public ITypeHandler Get(string handlerName)
+
+        public ITypeHandler GetTypeHandler(string handlerName)
         {
-            if (_name_Handler_Map.TryGetValue(handlerName, out var typeHandler))
-            {
-                return typeHandler;
-            }
+            if (_nameHandlerMap.TryGetValue(handlerName, out var typeHandler)) return typeHandler;
             throw new SmartSqlException($"Not Find TypeHandler.Name:{handlerName}!");
         }
-        public ITypeHandler Get(Type mappedType)
+
+        public ITypeHandler GetTypeHandler(Type propertyType)
         {
-            if (_type_Handler_Map.TryGetValue(mappedType, out var typeHandler))
+            if (TryGetTypeHandler(propertyType, propertyType, out var typeHandler)) return typeHandler;
+            if (TryGetTypeHandler(propertyType, AnyFieldTypeType.Type, out typeHandler)) return typeHandler;
+            var nullUnderType = Nullable.GetUnderlyingType(propertyType);
+            var isEnum = (nullUnderType ?? propertyType).IsEnum;
+            if (!isEnum)
             {
-                return typeHandler;
+                return UNKNOWN_TYPE_HANDLER;
             }
-            var nullUnderType = Nullable.GetUnderlyingType(mappedType);
-            bool isEnum = (nullUnderType ?? mappedType).IsEnum;
-            if (!isEnum) throw new SmartSqlException($"Not Find TypeHandler:{mappedType.FullName}!");
-            TryRegisterEnum(mappedType, out typeHandler);
+
+            TryRegisterEnumTypeHandler(propertyType, out typeHandler);
             return typeHandler;
         }
 
-        private bool TryRegisterEnum(Type enumType, out ITypeHandler typeHandler)
+        public bool TryGetTypeHandler(Type propertyType, Type fieldType, out ITypeHandler typeHandler)
         {
-            if (_type_Handler_Map.TryGetValue(enumType, out typeHandler))
+            if (!_typeHandlerMap.TryGetValue(propertyType, out var fieldTypeHandlerMap))
             {
+                typeHandler = default;
                 return false;
             }
+
+            return fieldTypeHandlerMap.TryGetValue(fieldType, out typeHandler);
+        }
+
+        public bool TryRegisterEnumTypeHandler(Type enumType, out ITypeHandler typeHandler)
+        {
+            if (TryGetTypeHandler(enumType, AnyFieldTypeType.Type, out typeHandler)) return false;
             var nullUnderType = Nullable.GetUnderlyingType(enumType);
             var enumTypeHandlerType = nullUnderType == null ? ENUM_TYPE_HANDLER_TYPE : NULLABLE_ENUM_TYPE_HANDLER_TYPE;
             typeHandler = _typeHandlerBuilder.Build(enumTypeHandlerType, enumType, null);
@@ -149,18 +318,76 @@ namespace SmartSql.TypeHandlers
 
         public void Register(ITypeHandler typeHandler)
         {
-            _type_Handler_Map.AddOrUpdate(typeHandler.MappedType, typeHandler, (type, handler) => typeHandler);
-            _name_Handler_Map.AddOrUpdate(typeHandler.Name, typeHandler, (handlerName, handler) => typeHandler);
+            if (!_typeHandlerMap.TryGetValue(typeHandler.PropertyType, out var fieldTypeHandlerMap))
+            {
+                fieldTypeHandlerMap = new Dictionary<Type, ITypeHandler>();
+                _typeHandlerMap.Add(typeHandler.PropertyType, fieldTypeHandlerMap);
+            }
+
+            if (fieldTypeHandlerMap.ContainsKey(typeHandler.FieldType))
+                fieldTypeHandlerMap[typeHandler.FieldType] = typeHandler;
+            else
+                fieldTypeHandlerMap.Add(typeHandler.FieldType, typeHandler);
+
             TypeHandlerCacheType.SetHandler(typeHandler);
+            PropertyTypeHandlerCacheType.SetHandler(typeHandler);
+        }
+
+        private void Register(string handlerName, ITypeHandler typeHandler)
+        {
+            if (_nameHandlerMap.ContainsKey(handlerName))
+                _nameHandlerMap[handlerName] = typeHandler;
+            else
+                _nameHandlerMap.Add(handlerName, typeHandler);
+            //Register(typeHandler);
+        }
+
+        public IDictionary<string, ITypeHandler> GetNamedTypeHandlers()
+        {
+            return _nameHandlerMap;
         }
 
         public void Register(TypeHandler typeHandlerConfig)
         {
-            ITypeHandler typeHandler;
-            typeHandler = typeHandlerConfig.HandlerType.IsGenericType 
-                ? _typeHandlerBuilder.Build(typeHandlerConfig.HandlerType, typeHandlerConfig.MappedType, typeHandlerConfig.Parameters) 
-                : _typeHandlerBuilder.Build(typeHandlerConfig.HandlerType, typeHandlerConfig.Parameters);
-            Register(typeHandler);
+            ITypeHandler typeHandler = null;
+            if (typeHandlerConfig.HandlerType.IsGenericType)
+            {
+                var genericArgs = typeHandlerConfig.HandlerType.GetGenericArguments();
+                switch (genericArgs.Length)
+                {
+                    case 2:
+                        {
+                            typeHandler = _typeHandlerBuilder.Build(typeHandlerConfig.HandlerType
+                                , typeHandlerConfig.PropertyType, typeHandlerConfig.FieldType,
+                                typeHandlerConfig.Properties);
+                            break;
+                        }
+                    case 1:
+                        {
+                            if (typeHandlerConfig.PropertyType != null)
+                                typeHandler = _typeHandlerBuilder.Build(typeHandlerConfig.HandlerType,
+                                    typeHandlerConfig.PropertyType, typeHandlerConfig.Properties);
+                            if (typeHandlerConfig.FieldType != null)
+                                typeHandler = _typeHandlerBuilder.Build(typeHandlerConfig.HandlerType,
+                                    typeHandlerConfig.FieldType, typeHandlerConfig.Properties);
+                            break;
+                        }
+                    default:
+                        {
+                            throw new SmartSqlException(
+                                $"Wrong TypeHandlerConfig.Type:{typeHandlerConfig.HandlerType.FullName}.");
+                        }
+                }
+            }
+            else
+            {
+                typeHandler = _typeHandlerBuilder.Build(typeHandlerConfig.HandlerType, typeHandlerConfig.Properties);
+            }
+
+            if (!string.IsNullOrEmpty(typeHandlerConfig.Name))
+                Register(typeHandlerConfig.Name, typeHandler);
+            else
+                Register(typeHandler);
         }
     }
 }

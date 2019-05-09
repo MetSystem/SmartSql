@@ -9,7 +9,6 @@ namespace System.Reflection.Emit
 {
     public static class ILGeneratorExtensions
     {
-
         public static void Pop(this ILGenerator ilGen)
         {
             ilGen.Emit(OpCodes.Pop);
@@ -23,17 +22,17 @@ namespace System.Reflection.Emit
         {
             ilGen.Emit(OpCodes.Call, methodInfo);
         }
+        public static void Callvirt(this ILGenerator ilGen, MethodInfo methodInfo)
+        {
+            ilGen.Emit(OpCodes.Callvirt, methodInfo);
+        }
         public static void LoadType(this ILGenerator ilGen, Type type)
         {
-            Debug.Assert(type != null);
             ilGen.Emit(OpCodes.Ldtoken, type);
             ilGen.Emit(OpCodes.Call, SmartSql.Reflection.TypeConstants.TypeType.Method.GetTypeFromHandle);
         }
         public static void New(this ILGenerator ilGen, ConstructorInfo ctorInfo)
         {
-            Debug.Assert(ctorInfo != null);
-            Debug.Assert(!ctorInfo.DeclaringType.ContainsGenericParameters);
-
             ilGen.Emit(OpCodes.Newobj, ctorInfo);
         }
 
@@ -47,7 +46,6 @@ namespace System.Reflection.Emit
         }
         public static void LoadString(this ILGenerator ilGen, string value)
         {
-            Debug.Assert(value != null);
             ilGen.Emit(OpCodes.Ldstr, value);
         }
         public static void Unbox(this ILGenerator ilGen, Type type)
@@ -65,8 +63,6 @@ namespace System.Reflection.Emit
 
         public static void LoadValueIndirect(this ILGenerator ilGen, Type type)
         {
-            Debug.Assert(type != null);
-
             switch (Type.GetTypeCode(type))
             {
                 case TypeCode.Byte:
@@ -115,8 +111,6 @@ namespace System.Reflection.Emit
 
         public static void StoreValueIndirect(this ILGenerator ilGen, Type type)
         {
-            Debug.Assert(type != null);
-
             switch (Type.GetTypeCode(type))
             {
                 case TypeCode.Boolean:
@@ -252,8 +246,6 @@ namespace System.Reflection.Emit
         }
         public static void StoreElement(this ILGenerator ilGen, Type type)
         {
-            Debug.Assert(type != null);
-
             switch (Type.GetTypeCode(type))
             {
                 case TypeCode.Boolean:
@@ -294,8 +286,6 @@ namespace System.Reflection.Emit
         }
         public static void LoadElement(this ILGenerator il, Type type)
         {
-            Debug.Assert(type != null);
-
             if (!type.IsValueType)
             {
                 il.Emit(OpCodes.Ldelem_Ref);

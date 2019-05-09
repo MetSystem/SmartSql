@@ -1,13 +1,23 @@
-﻿using SmartSql.Reflection;
+﻿using SmartSql.Configuration.Tags;
+using SmartSql.Reflection;
 using SmartSql.Test.Entities;
 using System;
+using System.Data;
 using System.Threading.Tasks;
+using SmartSql.Data;
 using Xunit;
 
 namespace SmartSql.Test.Unit.DbSessions
 {
-    public class DbSessionTest : AbstractXmlConfigBuilderTest
+    [Collection("GlobalSmartSql")]
+    public class DbSessionTest
     {
+        protected ISqlMapper SqlMapper { get; }
+
+        public DbSessionTest(SmartSqlFixture smartSqlFixture)
+        {
+            SqlMapper = smartSqlFixture.SqlMapper;
+        }
         #region Insert_From_RealSql
         private const string INSERT_SQL = @"INSERT INTO T_AllPrimitive
               (Boolean
@@ -17,7 +27,6 @@ namespace SmartSql.Test.Unit.DbSessions
               ,[Int32]
               ,[Int64]
               ,[Single]
-              ,[Double]
               ,[Decimal]
               ,[DateTime]
               ,[String]
@@ -46,7 +55,6 @@ namespace SmartSql.Test.Unit.DbSessions
               ,@Int32 
               ,@Int64
               ,@Single
-              ,@Double
               ,@Decimal
               ,@DateTime
               ,@String
@@ -71,7 +79,7 @@ namespace SmartSql.Test.Unit.DbSessions
         [Fact]
         public void Insert_From_RealSql()
         {
-            var id = DbSession.ExecuteScalar<long>(new RequestContext
+            var id = SqlMapper.ExecuteScalar<long>(new RequestContext
             {
                 RealSql = INSERT_SQL,
                 Request = new AllPrimitive
@@ -86,7 +94,7 @@ namespace SmartSql.Test.Unit.DbSessions
         [Fact]
         public void Insert()
         {
-            var id = DbSession.ExecuteScalar<long>(new RequestContext
+            var id = SqlMapper.ExecuteScalar<long>(new RequestContext
             {
                 Scope = nameof(AllPrimitive),
                 SqlId = "Insert",
@@ -98,9 +106,38 @@ namespace SmartSql.Test.Unit.DbSessions
             });
         }
         [Fact]
+        public void InsertByRequestTransaction()
+        {
+            var id = SqlMapper.ExecuteScalar<long>(new RequestContext
+            {
+                Scope = nameof(AllPrimitive),
+                SqlId = "Insert",
+                Transaction = IsolationLevel.Unspecified,
+                Request = new AllPrimitive
+                {
+                    DateTime = DateTime.Now,
+                    String = "SmartSql",
+                }
+            });
+        }
+        [Fact]
+        public void InsertByStatementTransaction()
+        {
+            var id = SqlMapper.ExecuteScalar<long>(new RequestContext
+            {
+                Scope = nameof(AllPrimitive),
+                SqlId = "InsertByStatementTransaction",
+                Request = new AllPrimitive
+                {
+                    DateTime = DateTime.Now,
+                    String = "SmartSql",
+                }
+            });
+        }
+        [Fact]
         public void InsertByIdGen()
         {
-            var id = DbSession.ExecuteScalar<long>(new RequestContext
+            var id = SqlMapper.ExecuteScalar<long>(new RequestContext
             {
                 Scope = nameof(AllPrimitive),
                 SqlId = "InsertByIdGen",
@@ -115,7 +152,7 @@ namespace SmartSql.Test.Unit.DbSessions
         [Fact]
         public async Task QueryAsync()
         {
-            var list = await DbSession.QueryAsync<dynamic>(new RequestContext
+            var list = await SqlMapper.QueryAsync<dynamic>(new RequestContext
             {
                 RealSql = "SELECT Top (5) T.* From T_AllPrimitive T With(NoLock)"
             });
@@ -126,7 +163,7 @@ namespace SmartSql.Test.Unit.DbSessions
         [Fact]
         public async Task InsertAsync()
         {
-            var id = await DbSession.ExecuteScalarAsync<long>(new RequestContext
+            var id = await SqlMapper.ExecuteScalarAsync<long>(new RequestContext
             {
                 Scope = nameof(AllPrimitive),
                 SqlId = "Insert",
@@ -136,28 +173,30 @@ namespace SmartSql.Test.Unit.DbSessions
                     String = "SmartSql",
                 }
             });
+            Assert.NotEqual(0, id);
         }
 
         [Fact]
         public void InsertFromSqlParameters()
         {
-            var insertParamters = RequestConvert.Instance.ToSqlParameters(new AllPrimitive
+            var insertParameters = RequestConvert.Instance.ToSqlParameters(new AllPrimitive
             {
                 DateTime = DateTime.Now,
                 String = "SmartSql",
             }, false);
 
-            var id = DbSession.ExecuteScalar<long>(new RequestContext
+            var id = SqlMapper.ExecuteScalar<long>(new RequestContext
             {
                 RealSql = INSERT_SQL,
-                Request = insertParamters
+                Request = insertParameters
             });
+            Assert.NotEqual(0, id);
         }
 
         //[Fact]
         public void Update()
         {
-            var id = DbSession.ExecuteScalar<int>(new RequestContext
+            var id = SqlMapper.ExecuteScalar<int>(new RequestContext
             {
                 Scope = nameof(AllPrimitive),
                 SqlId = "Update",
@@ -171,7 +210,7 @@ namespace SmartSql.Test.Unit.DbSessions
         //[Fact]
         public void Delete()
         {
-            var id = DbSession.ExecuteScalar<int>(new RequestContext
+            var id = SqlMapper.ExecuteScalar<int>(new RequestContext
             {
                 Scope = nameof(AllPrimitive),
                 SqlId = "Delete",
@@ -181,6 +220,72 @@ namespace SmartSql.Test.Unit.DbSessions
                     String = "SmartSql",
                 }
             });
+        }
+        [Fact]
+        public void DeleteCheckIncludeRequired()
+        {
+            try
+            {
+                var id = SqlMapper.ExecuteScalar<int>(new RequestContext
+                {
+                    Scope = nameof(AllPrimitive),
+                    SqlId = "DeleteCheckIncludeRequired",
+                    Request = new { }
+                });
+            }
+            catch (TagRequiredFailException ex)
+            {
+                Assert.True(true);
+            }
+        }
+        [Fact]
+        public void DeleteCheckIsNotEmptyRequired()
+        {
+            try
+            {
+                var id = SqlMapper.ExecuteScalar<int>(new RequestContext
+                {
+                    Scope = nameof(AllPrimitive),
+                    SqlId = "DeleteCheckIsNotEmptyRequired",
+                    Request = new { }
+                });
+            }
+            catch (TagRequiredFailException ex)
+            {
+                Assert.True(true);
+            }
+        }
+
+
+
+
+        //Create PROCEDURE[dbo].[SP_QueryUser]
+        //@Total int = 0 Out
+        //    AS
+        //BEGIN
+        //    SET NOCOUNT ON;
+        //Set @Total = (Select Count(*) From T_User T With(NoLock));
+        //SELECT Top 10 T.* From T_User T With(NoLock)
+        //END
+
+        [Fact]
+        public void SP()
+        {
+            SqlParameterCollection dbParameterCollection = new SqlParameterCollection();
+            dbParameterCollection.Add(new SqlParameter
+            {
+                Name = "Total",
+                DbType = System.Data.DbType.Int32,
+                Direction = System.Data.ParameterDirection.Output
+            });
+            RequestContext context = new RequestContext
+            {
+                CommandType = System.Data.CommandType.StoredProcedure,
+                RealSql = "SP_QueryUser",
+                Request = dbParameterCollection
+            };
+            var list = SqlMapper.Query<User>(context);
+            dbParameterCollection.TryGetParameterValue("Total", out int total);
         }
 
     }
