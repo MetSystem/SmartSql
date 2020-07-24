@@ -235,27 +235,50 @@ namespace SmartSql.TypeHandlers
 
             handler = new UInt16TypeHandler();
             Register(handler);
+            handler = new UInt16ByteTypeHandler();
+            Register(handler);
+            handler = new UInt16AnyTypeHandler();
+            Register(handler);
             handler = new NullableUInt16TypeHandler();
             Register(handler);
-
+            handler = new NullableUInt16AnyTypeHandler();
+            Register(handler);
             #endregion
 
             #region UInt32
 
             handler = new UInt32TypeHandler();
             Register(handler);
+            handler = new UInt32ByteTypeHandler();
+            Register(handler);
+            handler = new UInt32UInt16TypeHandler();
+            Register(handler);
+            handler = new UInt32AnyTypeHandler();
+            Register(handler);
             handler = new NullableUInt32TypeHandler();
             Register(handler);
-
+            handler = new NullableUInt32AnyTypeHandler();
+            Register(handler);
+            
             #endregion
 
             #region UInt64
 
             handler = new UInt64TypeHandler();
             Register(handler);
+            handler = new UInt64ByteTypeHandler();
+            Register(handler);
+            handler = new UInt64UInt16TypeHandler();
+            Register(handler);
+            handler = new UInt64UInt32TypeHandler();
+            Register(handler);
+            handler = new UInt64AnyTypeHandler();
+            Register(handler);
             handler = new NullableUInt64TypeHandler();
             Register(handler);
-
+            handler = new NullableUInt64AnyTypeHandler();
+            Register(handler);
+            
             #endregion
 
             #region SByte
@@ -316,30 +339,33 @@ namespace SmartSql.TypeHandlers
             return true;
         }
 
+        
         public void Register(ITypeHandler typeHandler)
         {
-            if (!_typeHandlerMap.TryGetValue(typeHandler.PropertyType, out var fieldTypeHandlerMap))
+            lock (this)
             {
-                fieldTypeHandlerMap = new Dictionary<Type, ITypeHandler>();
-                _typeHandlerMap.Add(typeHandler.PropertyType, fieldTypeHandlerMap);
+                if (!_typeHandlerMap.TryGetValue(typeHandler.PropertyType, out var fieldTypeHandlerMap))
+                {
+                    fieldTypeHandlerMap = new Dictionary<Type, ITypeHandler>();
+                    _typeHandlerMap.Add(typeHandler.PropertyType, fieldTypeHandlerMap);
+                }
+
+                if (fieldTypeHandlerMap.ContainsKey(typeHandler.FieldType))
+                    fieldTypeHandlerMap[typeHandler.FieldType] = typeHandler;
+                else
+                    fieldTypeHandlerMap.Add(typeHandler.FieldType, typeHandler);
+
+                TypeHandlerCacheType.SetHandler(typeHandler);
+                PropertyTypeHandlerCacheType.SetHandler(typeHandler);
             }
-
-            if (fieldTypeHandlerMap.ContainsKey(typeHandler.FieldType))
-                fieldTypeHandlerMap[typeHandler.FieldType] = typeHandler;
-            else
-                fieldTypeHandlerMap.Add(typeHandler.FieldType, typeHandler);
-
-            TypeHandlerCacheType.SetHandler(typeHandler);
-            PropertyTypeHandlerCacheType.SetHandler(typeHandler);
         }
 
-        private void Register(string handlerName, ITypeHandler typeHandler)
+        public void Register(string handlerName, ITypeHandler typeHandler)
         {
             if (_nameHandlerMap.ContainsKey(handlerName))
                 _nameHandlerMap[handlerName] = typeHandler;
             else
                 _nameHandlerMap.Add(handlerName, typeHandler);
-            //Register(typeHandler);
         }
 
         public IDictionary<string, ITypeHandler> GetNamedTypeHandlers()

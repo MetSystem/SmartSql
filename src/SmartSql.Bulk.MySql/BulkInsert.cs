@@ -1,5 +1,4 @@
-﻿using MySql.Data.MySqlClient;
-using SmartSql.DbSession;
+﻿using SmartSql.DbSession;
 using SmartSql.Reflection.TypeConstants;
 using System;
 using System.Data;
@@ -9,16 +8,18 @@ using System.Text;
 using System.Threading.Tasks;
 
 #if MySqlConnector
+using MySqlConnector;
 namespace SmartSql.Bulk.MySqlConnector
 #else
+using MySql.Data.MySqlClient;
 namespace SmartSql.Bulk.MySql
 #endif
 {
     public class BulkInsert : AbstractBulkInsert
     {
+        const string NULL_VALUE = "NULL";
         public BulkInsert(IDbSession dbSession) : base(dbSession)
         {
-
         }
 
         public override void Insert()
@@ -30,10 +31,12 @@ namespace SmartSql.Bulk.MySql
         }
 
         public String SecureFilePriv { get; set; }
+        public String DateTimeFormat { get; set; }
         private string _fieldTerminator = ",";
         private char _fieldQuotationCharacter = '"';
         private char _escapeCharacter = '"';
         private string _lineTerminator = "\r\n";
+
         public override async Task InsertAsync()
         {
             await DbSession.OpenAsync();
@@ -79,13 +82,33 @@ namespace SmartSql.Bulk.MySql
                     {
                         dataBuilder.AppendFormat("\"{0}\"", row[dataColumn].ToString().Replace("\"", "\"\""));
                     }
+                    else if (dataColumn.DataType == CommonType.DateTime || dataColumn.DataType == typeof(DateTime?))
+                    {
+                        var originCell = row[dataColumn];
+                        if (originCell is DBNull)
+                        {
+                            dataBuilder.Append(NULL_VALUE);
+                        }
+                        else
+                        {
+                            var dateCell = (DateTime)originCell;
+                            var dateCellTime = dateCell.ToString(DateTimeFormat);
+                            dataBuilder.Append(dateCellTime);
+                        }
+                    }
+                    else if (row[dataColumn] is DBNull || dataColumn.AutoIncrement)
+                    {
+                        dataBuilder.Append(NULL_VALUE);
+                    }
                     else
                     {
-                        var colValStr = dataColumn.AutoIncrement ? "" : row[dataColumn]?.ToString();
+                        var colValStr = row[dataColumn]?.ToString() ?? NULL_VALUE;
                         dataBuilder.Append(colValStr);
                     }
+
                     colIndex++;
                 }
+
                 dataBuilder.Append(_lineTerminator);
             }
 

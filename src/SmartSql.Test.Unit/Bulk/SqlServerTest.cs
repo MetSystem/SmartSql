@@ -1,65 +1,82 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
 using Xunit;
 using SmartSql.Bulk.SqlServer;
 using SmartSql.Bulk;
 using System.Threading.Tasks;
+using SmartSql.DataSource;
+using SmartSql.DbSession;
 using SmartSql.Test.Entities;
 
 namespace SmartSql.Test.Unit.Bulk
 {
-    [Collection("GlobalSmartSql")]
-    public class SqlServerTest 
+    public class SqlServerFixture
     {
-        protected ISqlMapper SqlMapper { get; }
+        public IDbSessionFactory DbSessionFactory { get; }
 
-        public SqlServerTest(SmartSqlFixture smartSqlFixture)
+        public SqlServerFixture()
         {
-            SqlMapper = smartSqlFixture.SqlMapper;
+            DbSessionFactory = new SmartSqlBuilder()
+                .UseDataSource(DbProvider.SQLSERVER,
+                    "Data Source=.;Initial Catalog=SmartSqlTestDB;Integrated Security=True")
+                .UseAlias("SqlServer-Bulk")
+                .AddTypeHandler(new Configuration.TypeHandler()
+                {
+                    Name = "Json",
+                    HandlerType = typeof(TypeHandler.JsonTypeHandler)
+                })
+                .Build().GetDbSessionFactory();
         }
+    }
+
+    public class SqlServerTest : IClassFixture<SqlServerFixture>
+    {
+        private IDbSessionFactory _dbSessionFactory;
+
+        public SqlServerTest(SqlServerFixture serverFixture)
+        {
+            _dbSessionFactory = serverFixture.DbSessionFactory;
+        }
+
         [Fact]
         public void Insert()
         {
-            using (var dbSession= SqlMapper.SessionStore.Open())
+            using (var dbSession = _dbSessionFactory.Open())
             {
-                var data = SqlMapper.GetDataTable(new RequestContext
+                var data = dbSession.GetDataTable(new RequestContext
                 {
-                    Scope = nameof(AllPrimitive),
-                    SqlId = "Query",
-                    Request = new { Taken = 100 }
+                    RealSql = "Select Top(100) * From T_AllPrimitive Order By Id Desc"
                 });
                 data.TableName = "T_AllPrimitive";
                 IBulkInsert bulkInsert = new BulkInsert(dbSession);
                 bulkInsert.Table = data;
                 bulkInsert.Insert();
-            }           
+            }
         }
+
+
         [Fact]
         public void InsertByList()
         {
-            using (var dbSession = SqlMapper.SessionStore.Open())
+            using (var dbSession = _dbSessionFactory.Open())
             {
-                IBulkInsert bulkInsert = new BulkInsert(dbSession);
-                var list = SqlMapper.Query<AllPrimitive>(new RequestContext
+                var list = dbSession.Query<AllPrimitive>(new RequestContext
                 {
-                    Scope = nameof(AllPrimitive),
-                    SqlId = "Query",
-                    Request = new { Taken = 100 }
+                    RealSql = "Select Top(100) * From T_AllPrimitive Order By Id Desc"
                 });
+                IBulkInsert bulkInsert = new BulkInsert(dbSession);
+
                 bulkInsert.Insert(list);
             }
         }
+
         [Fact]
         public async Task InsertAsync()
         {
-            using (var dbSession = SqlMapper.SessionStore.Open())
+            using (var dbSession = _dbSessionFactory.Open())
             {
-                var data = await SqlMapper.GetDataTableAsync(new RequestContext
+                var data = await dbSession.GetDataTableAsync(new RequestContext
                 {
-                    Scope = nameof(AllPrimitive),
-                    SqlId = "Query",
-                    Request = new {Taken = 100}
+                    RealSql = "Select Top(100) * From T_AllPrimitive Order By Id Desc"
                 });
                 data.TableName = "T_AllPrimitive";
                 IBulkInsert bulkInsert = new BulkInsert(dbSession);
@@ -67,16 +84,15 @@ namespace SmartSql.Test.Unit.Bulk
                 await bulkInsert.InsertAsync();
             }
         }
+
         [Fact]
         public async Task InsertByListAsync()
         {
-            using (var dbSession = SqlMapper.SessionStore.Open())
+            using (var dbSession = _dbSessionFactory.Open())
             {
-                var list = await SqlMapper.QueryAsync<AllPrimitive>(new RequestContext
+                var list = await dbSession.QueryAsync<AllPrimitive>(new RequestContext
                 {
-                    Scope = nameof(AllPrimitive),
-                    SqlId = "Query",
-                    Request = new {Taken = 100}
+                    RealSql = "Select Top(100) * From T_AllPrimitive Order By Id Desc"
                 });
                 IBulkInsert bulkInsert = new BulkInsert(dbSession);
                 await bulkInsert.InsertAsync<AllPrimitive>(list);
